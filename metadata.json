@@ -1,0 +1,7 @@
+{
+  "name": "Copy of HSC Elite Study Tracker",
+  "description": "A comprehensive study tracking application for HSC students with gamification, detailed progress monitoring, and an AI study assistant.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
