@@ -1,13 +1,18 @@
 {
   "name": "HSC Elite Study Tracker",
   "short_name": "HSC Elite",
-  "description": "A comprehensive study tracking application for HSC students with gamification, detailed progress monitoring, and an AI study assistant.",
-  "requestFramePermissions": [
-    "camera",
-    "microphone"
+  "description": "Multi-device HSC study tracking with AKI Assistant.",
+  "icons": [
+    {
+      "src": "https://img.icons8.com/fluency/144/zap.png",
+      "sizes": "144x144",
+      "type": "image/png"
+    }
   ],
-  "theme_color": "#4f46e5",
-  "background_color": "#f8fafc",
+  "start_url": "/",
   "display": "standalone",
-  "orientation": "portrait"
+  "background_color": "#0F172A",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait",
+  "requestFramePermissions": []
 }
