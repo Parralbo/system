@@ -1,7 +1,13 @@
 {
-  "name": "Copy of HSC Elite Study Tracker",
+  "name": "HSC Elite Study Tracker",
+  "short_name": "HSC Elite",
   "description": "A comprehensive study tracking application for HSC students with gamification, detailed progress monitoring, and an AI study assistant.",
   "requestFramePermissions": [
+    "camera",
     "microphone"
-  ]
+  ],
+  "theme_color": "#4f46e5",
+  "background_color": "#f8fafc",
+  "display": "standalone",
+  "orientation": "portrait"
 }

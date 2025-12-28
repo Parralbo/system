@@ -42,16 +42,36 @@ import {
   Share2,
   QrCode,
   Link2,
-  ExternalLink
+  ExternalLink,
+  Camera
 } from 'lucide-react';
 import { getTopicExplanation } from './geminiService';
+
+// --- Utility: Safe Unicode Base64 ---
+const toBase64 = (obj: any) => {
+  const str = JSON.stringify(obj);
+  return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => 
+    String.fromCharCode(parseInt(p1, 16))
+  ));
+};
+
+const fromBase64 = (str: string) => {
+  try {
+    const decoded = atob(str).split('').map(c => 
+      '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+    ).join('');
+    return JSON.parse(decodeURIComponent(decoded));
+  } catch (e) {
+    return null;
+  }
+};
 
 // --- Helper Components ---
 
 const ProgressBar: React.FC<{ progress: number; color?: string; className?: string }> = ({ progress, color = 'bg-blue-600', className = "" }) => (
   <div className={`w-full bg-gray-200/20 rounded-full h-2.5 overflow-hidden ${className}`}>
     <div 
-      className={`h-full transition-all duration-500 ease-out ${color}`} 
+      className={`h-full transition-all duration-700 cubic-bezier(0.4, 0, 0.2, 1) ${color}`} 
       style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
     />
   </div>
@@ -66,35 +86,43 @@ const AKIModal: React.FC<{
 }> = ({ isOpen, onClose, title, content, loading }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-white rounded-3xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="p-4 border-b flex justify-between items-center bg-indigo-50">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-indigo-600" />
-            <h3 className="font-semibold text-indigo-900">{title}</h3>
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm">
+      <div className="bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] w-full max-w-lg h-[90vh] sm:h-auto max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-300">
+        <div className="p-5 border-b flex justify-between items-center bg-indigo-50/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-100">
+               <Sparkles size={20} />
+            </div>
+            <div>
+              <h3 className="font-black text-slate-800 uppercase text-xs tracking-tight">{title}</h3>
+              <p className="text-[9px] text-indigo-500 font-bold uppercase tracking-widest">AKI Analysis</p>
+            </div>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-indigo-100 rounded-full transition-colors">
-            <X className="w-6 h-6 text-indigo-900" />
+          <button onClick={onClose} className="p-2 bg-slate-200/50 hover:bg-slate-200 rounded-full transition-colors">
+            <X size={20} className="text-slate-600" />
           </button>
         </div>
-        <div className="p-6 overflow-y-auto flex-1">
+        <div className="p-8 overflow-y-auto flex-1 bg-white">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-4">
-              <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
-              <p className="text-gray-500 animate-pulse font-medium">AKI is thinking...</p>
+            <div className="flex flex-col items-center justify-center py-16 gap-5">
+              <div className="relative">
+                <Loader2 className="w-14 h-14 text-indigo-500 animate-spin" />
+                <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-300 w-6 h-6" />
+              </div>
+              <p className="text-slate-400 animate-pulse font-black text-[10px] uppercase tracking-[0.2em]">Processing Mastery...</p>
             </div>
           ) : (
-            <div className="prose prose-sm prose-indigo max-w-none text-gray-800 font-science">
+            <div className="prose prose-sm prose-indigo max-w-none text-slate-800 font-science">
               <ReactMarkdown>{content}</ReactMarkdown>
             </div>
           )}
         </div>
-        <div className="p-4 bg-gray-50 border-t flex justify-center">
+        <div className="p-6 bg-slate-50 border-t flex justify-center safe-bottom">
           <button 
             onClick={onClose}
-            className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-sm"
+            className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-indigo-100 active:scale-95 transition-all"
           >
-            Understood
+            I Mastered This
           </button>
         </div>
       </div>
@@ -102,7 +130,6 @@ const AKIModal: React.FC<{
   );
 };
 
-// --- Profile Viewer Modal ---
 const ProfileViewer: React.FC<{ 
   user: UserProfile | null; 
   isOpen: boolean; 
@@ -125,40 +152,41 @@ const ProfileViewer: React.FC<{
   const currentLevel = LEVELS.find(l => user.xp >= l.min && user.xp <= l.max) || LEVELS[0];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-white rounded-[2.5rem] w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-        <div className="p-6 bg-gradient-to-br from-indigo-600 to-blue-700 text-white flex justify-between items-start">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center text-3xl shadow-inner backdrop-blur-md">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+      <div className="bg-white rounded-[3rem] w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+        <div className="p-8 bg-gradient-to-br from-indigo-700 to-blue-900 text-white flex justify-between items-start relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-12 opacity-10 rotate-12"><Trophy size={120} /></div>
+          <div className="flex items-center gap-5 relative z-10">
+            <div className="w-20 h-20 bg-white/20 rounded-3xl flex items-center justify-center text-4xl shadow-inner backdrop-blur-md border border-white/10">
               {currentLevel.emoji}
             </div>
             <div>
-              <h3 className="text-xl font-black uppercase tracking-tight">{user.username}</h3>
-              <p className="text-indigo-100 text-xs font-bold uppercase tracking-widest">{currentLevel.name} • {user.xp} XP</p>
+              <h3 className="text-2xl font-black uppercase tracking-tighter leading-tight">{user.username}</h3>
+              <p className="text-indigo-200 text-[10px] font-black uppercase tracking-[0.2em]">{currentLevel.name} • {user.xp.toLocaleString()} XP</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors">
+          <button onClick={onClose} className="p-2 bg-white/10 hover:bg-white/20 rounded-2xl transition-colors relative z-10">
             <X size={24} />
           </button>
         </div>
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+        <div className="p-8 overflow-y-auto flex-1 space-y-8">
           <div className="space-y-4">
-             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] px-1">Detailed Mastery Breakdown</h4>
-             <div className="grid grid-cols-1 gap-3">
+             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] px-1">Curriculum Mastery</h4>
+             <div className="grid grid-cols-1 gap-4">
                {subDetails.map(sub => (
-                 <div key={sub.name} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <div className="flex justify-between items-center mb-2">
-                       <span className="text-[10px] font-black text-slate-600 uppercase">{sub.name}</span>
-                       <span className="text-xs font-black text-indigo-600">{Math.round(sub.percent)}%</span>
+                 <div key={sub.name} className="p-5 bg-slate-50 rounded-[2rem] border border-slate-100">
+                    <div className="flex justify-between items-center mb-3">
+                       <span className="text-[11px] font-black text-slate-600 uppercase tracking-tight">{sub.name}</span>
+                       <span className="text-xs font-black text-indigo-600 bg-white px-3 py-1 rounded-full border border-indigo-50 shadow-sm">{Math.round(sub.percent)}%</span>
                     </div>
-                    <ProgressBar progress={sub.percent} color="bg-indigo-500" className="h-1.5" />
+                    <ProgressBar progress={sub.percent} color="bg-indigo-500" className="h-2" />
                  </div>
                ))}
              </div>
           </div>
-          <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100">
-             <p className="text-[9px] text-indigo-600 font-bold uppercase text-center leading-relaxed">
-               Last active: {new Date(user.lastActive).toLocaleString()}
+          <div className="p-5 bg-indigo-50/50 rounded-3xl border border-indigo-100 text-center">
+             <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-widest leading-relaxed">
+               Last Synchronized: {new Date(user.lastActive).toLocaleDateString()}
              </p>
           </div>
         </div>
@@ -180,7 +208,7 @@ const SyncModal: React.FC<{
   const profileData = useMemo(() => {
     if (!user) return "";
     const shareable = { ...user, password: undefined, followedUsers: undefined };
-    return btoa(JSON.stringify(shareable));
+    return toBase64(shareable);
   }, [user]);
 
   const shareLink = useMemo(() => {
@@ -188,39 +216,44 @@ const SyncModal: React.FC<{
     return `${base}#follow=${profileData}`;
   }, [profileData]);
 
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(shareLink)}&bgcolor=ffffff&color=4f46e5&margin=10`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(shareLink)}&bgcolor=ffffff&color=4f46e5&margin=15`;
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-white rounded-[2.5rem] w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-        <div className="p-6 bg-indigo-600 text-white flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <Globe className="w-6 h-6" />
-            <h3 className="text-xl font-black uppercase tracking-tighter">Student Hub</h3>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md">
+      <div className="bg-white rounded-[3rem] w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+        <div className="p-8 bg-indigo-600 text-white flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center">
+               <Globe className="w-7 h-7" />
+            </div>
+            <div>
+              <h3 className="text-2xl font-black uppercase tracking-tighter">Student Hub</h3>
+              <p className="text-[10px] font-bold text-indigo-200 uppercase tracking-widest">Connect & Sync</p>
+            </div>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-full">
+          <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-2xl transition-all">
             <X size={28} />
           </button>
         </div>
 
-        <div className="flex bg-indigo-700/10 p-1 mx-6 mt-6 rounded-2xl">
-          <button onClick={() => setActiveTab('link')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'link' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>Join Link</button>
-          <button onClick={() => setActiveTab('qr')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'qr' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>Scan ID</button>
-          <button onClick={() => setActiveTab('paste')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'paste' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>Paster</button>
+        <div className="flex bg-slate-100 p-1.5 mx-8 mt-8 rounded-[2rem] border border-slate-200">
+          <button onClick={() => setActiveTab('link')} className={`flex-1 py-4 rounded-3xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'link' ? 'bg-white text-indigo-600 shadow-xl' : 'text-slate-400'}`}>Share Link</button>
+          <button onClick={() => setActiveTab('qr')} className={`flex-1 py-4 rounded-3xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'qr' ? 'bg-white text-indigo-600 shadow-xl' : 'text-slate-400'}`}>Scan ID</button>
+          <button onClick={() => setActiveTab('paste')} className={`flex-1 py-4 rounded-3xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'paste' ? 'bg-white text-indigo-600 shadow-xl' : 'text-slate-400'}`}>Paster</button>
         </div>
 
-        <div className="p-8 overflow-y-auto flex-1 flex flex-col items-center justify-center text-center">
+        <div className="p-10 overflow-y-auto flex-1 flex flex-col items-center justify-center text-center">
           {activeTab === 'link' && (
-            <div className="space-y-6 w-full animate-in fade-in zoom-in-95">
-              <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-3xl mx-auto flex items-center justify-center shadow-inner">
-                 <Link2 size={40} />
+            <div className="space-y-8 w-full animate-in fade-in zoom-in-95">
+              <div className="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-[2.5rem] mx-auto flex items-center justify-center shadow-inner">
+                 <Link2 size={48} />
               </div>
-              <div className="space-y-2">
-                <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight">Broadcast Profile</h4>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed px-4">
-                  Send this link to friends. When they click it, you'll be added to their leaderboard instantly.
+              <div className="space-y-3">
+                <h4 className="text-xl font-black text-slate-800 uppercase tracking-tight">Broadcast Profile</h4>
+                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed px-6">
+                  Sharing this link adds you to your friend's leaderboard. Your password is never shared.
                 </p>
               </div>
               <button 
@@ -232,36 +265,36 @@ const SyncModal: React.FC<{
                     alert('Link copied to clipboard!');
                   }
                 }}
-                className="w-full py-5 bg-indigo-600 text-white rounded-[2rem] font-black uppercase tracking-widest text-xs shadow-xl shadow-indigo-100 flex items-center justify-center gap-3 active:scale-95 transition-all"
+                className="w-full py-6 bg-indigo-600 text-white rounded-[2.2rem] font-black uppercase tracking-widest text-xs shadow-2xl shadow-indigo-200 flex items-center justify-center gap-3 active:scale-95 transition-all"
               >
-                <Share2 size={18} /> Send Join Link
+                <Share2 size={20} /> Copy Invite Link
               </button>
             </div>
           )}
 
           {activeTab === 'qr' && (
-            <div className="space-y-6 w-full animate-in fade-in zoom-in-95">
-              <div className="bg-white p-4 rounded-3xl border-4 border-indigo-50 shadow-xl inline-block">
-                 <img src={qrUrl} alt="QR Code" className="w-56 h-56 rounded-xl" />
+            <div className="space-y-8 w-full animate-in fade-in zoom-in-95">
+              <div className="bg-white p-6 rounded-[3rem] border-8 border-indigo-50 shadow-2xl inline-block">
+                 <img src={qrUrl} alt="QR Code" className="w-60 h-60 rounded-2xl" />
               </div>
-              <div className="space-y-2">
-                <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight">Your Student ID</h4>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-                  Show this to a friend to scan with their camera.
+              <div className="space-y-3">
+                <h4 className="text-xl font-black text-slate-800 uppercase tracking-tight">Personal ID</h4>
+                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                  Ask a friend to scan this with their camera to follow you.
                 </p>
               </div>
             </div>
           )}
 
           {activeTab === 'paste' && (
-            <div className="space-y-6 w-full animate-in fade-in zoom-in-95">
+            <div className="space-y-8 w-full animate-in fade-in zoom-in-95">
               <textarea 
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
-                placeholder="Paste Link or Profile Key here..."
-                className="w-full h-32 p-4 bg-slate-50 border-2 border-slate-100 rounded-3xl text-[10px] font-mono focus:border-indigo-500 outline-none"
+                placeholder="Paste Follow-Link or Profile Key..."
+                className="w-full h-40 p-6 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] text-xs font-mono focus:border-indigo-500 focus:bg-white outline-none transition-all shadow-inner"
               />
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <button 
                   disabled={!keyInput}
                   onClick={() => { 
@@ -269,7 +302,7 @@ const SyncModal: React.FC<{
                     onFollow(data); 
                     setKeyInput(''); 
                   }}
-                  className="py-4 bg-green-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest disabled:opacity-50 active:scale-95"
+                  className="py-5 bg-indigo-600 text-white rounded-3xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-indigo-100 disabled:opacity-50 active:scale-95 transition-all"
                 >
                   Follow Friend
                 </button>
@@ -280,9 +313,9 @@ const SyncModal: React.FC<{
                     onImport(data); 
                     setKeyInput(''); 
                   }}
-                  className="py-4 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest disabled:opacity-50 active:scale-95"
+                  className="py-5 bg-slate-800 text-white rounded-3xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-slate-100 disabled:opacity-50 active:scale-95 transition-all"
                 >
-                  Restore Me
+                  Restore Account
                 </button>
               </div>
             </div>
@@ -308,7 +341,6 @@ const App: React.FC = () => {
   const [isSignup, setIsSignup] = useState(false);
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState('');
 
   // AKI Assistant State
@@ -319,37 +351,44 @@ const App: React.FC = () => {
     loading: false
   });
 
+  // Safe Follow Logic
+  const processFollowLink = useCallback((data: string) => {
+    try {
+      const u = fromBase64(data) as UserProfile;
+      if (!u) throw new Error("Invalid Data");
+
+      const session = localStorage.getItem('hsc-elite-session');
+      if (session) {
+        const userData = localStorage.getItem(`hsc-user-${session}`);
+        if (userData) {
+          const current = JSON.parse(userData) as UserProfile;
+          if (u.username !== current.username) {
+            const follows = [...(current.followedUsers || [])];
+            const idx = follows.findIndex(f => f.username === u.username);
+            if (idx > -1) follows[idx] = u;
+            else follows.push(u);
+            
+            const updated = { ...current, followedUsers: follows };
+            localStorage.setItem(`hsc-user-${current.username}`, JSON.stringify(updated));
+            setCurrentUser(updated);
+            alert(`Automatically followed ${u.username}!`);
+            window.location.hash = ''; 
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Link follow failed", e);
+    }
+  }, []);
+
   // URL Link Follow Detection
   useEffect(() => {
     const hash = window.location.hash;
     if (hash.startsWith('#follow=')) {
       const data = hash.split('#follow=')[1];
-      try {
-        const u = JSON.parse(atob(data)) as UserProfile;
-        const session = localStorage.getItem('hsc-elite-session');
-        if (session) {
-          const userData = localStorage.getItem(`hsc-user-${session}`);
-          if (userData) {
-            const current = JSON.parse(userData) as UserProfile;
-            if (u.username !== current.username) {
-              const follows = [...(current.followedUsers || [])];
-              const idx = follows.findIndex(f => f.username === u.username);
-              if (idx > -1) follows[idx] = u;
-              else follows.push(u);
-              
-              const updated = { ...current, followedUsers: follows };
-              localStorage.setItem(`hsc-user-${current.username}`, JSON.stringify(updated));
-              setCurrentUser(updated);
-              alert(`Automatically followed ${u.username}!`);
-              window.location.hash = ''; // Clear hash
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Link follow failed", e);
-      }
+      processFollowLink(data);
     }
-  }, []);
+  }, [processFollowLink]);
 
   // Load session
   useEffect(() => {
@@ -357,7 +396,11 @@ const App: React.FC = () => {
     if (session) {
       const userData = localStorage.getItem(`hsc-user-${session}`);
       if (userData) {
-        try { setCurrentUser(JSON.parse(userData)); } catch (e) { localStorage.removeItem('hsc-elite-session'); }
+        try { 
+          setCurrentUser(JSON.parse(userData)); 
+        } catch (e) { 
+          localStorage.removeItem('hsc-elite-session'); 
+        }
       }
     }
   }, []);
@@ -396,7 +439,7 @@ const App: React.FC = () => {
       const explanation = await getTopicExplanation(subject, chapter, topic);
       setAkiModal(prev => ({ ...prev, content: explanation, loading: false }));
     } catch (error) {
-      setAkiModal(prev => ({ ...prev, content: "Sorry, I couldn't get an explanation right now. Please try again later.", loading: false }));
+      setAkiModal(prev => ({ ...prev, content: "Internal connection error. Please verify your environment API key.", loading: false }));
     }
   };
 
@@ -436,19 +479,19 @@ const App: React.FC = () => {
     setAuthError('');
     const u = usernameInput.trim();
     const p = passwordInput.trim();
-    if (!u || !p) { setAuthError('Missing fields'); return; }
+    if (!u || !p) { setAuthError('Fields Required'); return; }
     const key = `hsc-user-${u}`;
     const existing = localStorage.getItem(key);
     if (isSignup) {
-      if (existing) { setAuthError('User exists'); return; }
+      if (existing) { setAuthError('Account Exists'); return; }
       const user: UserProfile = { username: u, password: p, xp: 0, progress: { completedTopics: {}, chapterCheckboxes: {} }, lastActive: Date.now(), followedUsers: [] };
       localStorage.setItem(key, JSON.stringify(user));
       setCurrentUser(user);
       localStorage.setItem('hsc-elite-session', u);
     } else {
-      if (!existing) { setAuthError('User not found. Try "Restore via Key"'); return; }
+      if (!existing) { setAuthError('Account Not Found'); return; }
       const user: UserProfile = JSON.parse(existing);
-      if (user.password !== p) { setAuthError('Wrong password'); return; }
+      if (user.password !== p) { setAuthError('Incorrect Password'); return; }
       setCurrentUser(user);
       localStorage.setItem('hsc-elite-session', u);
     }
@@ -456,20 +499,21 @@ const App: React.FC = () => {
 
   const handleImport = (data: string) => {
     try {
-      const u = JSON.parse(atob(data)) as UserProfile;
+      const u = fromBase64(data) as UserProfile;
+      if (!u) throw new Error("Corrupt Key");
       localStorage.setItem(`hsc-user-${u.username}`, JSON.stringify(u));
       localStorage.setItem('hsc-elite-session', u.username);
       setCurrentUser(u);
       setIsSyncModalOpen(false);
-      alert('Account Restored!');
-    } catch (e) { alert('Invalid Key'); }
+      alert('Account Successfully Restored!');
+    } catch (e) { alert('Invalid or Corrupt Key'); }
   };
 
   const handleFollow = (data: string) => {
     try {
-      const u = JSON.parse(atob(data)) as UserProfile;
-      if (!currentUser) return;
-      if (u.username === currentUser.username) { alert('Already following yourself!'); return; }
+      const u = fromBase64(data) as UserProfile;
+      if (!u || !currentUser) return;
+      if (u.username === currentUser.username) { alert('Self-following is redundant.'); return; }
       const updatedFollows = [...(currentUser.followedUsers || [])];
       const existingIdx = updatedFollows.findIndex(f => f.username === u.username);
       if (existingIdx > -1) updatedFollows[existingIdx] = u;
@@ -479,8 +523,8 @@ const App: React.FC = () => {
       setCurrentUser(updatedUser);
       localStorage.setItem(`hsc-user-${currentUser.username}`, JSON.stringify(updatedUser));
       setIsSyncModalOpen(false);
-      alert(`Following ${u.username}!`);
-    } catch (e) { alert('Invalid Student Data'); }
+      alert(`Synchronized with ${u.username}!`);
+    } catch (e) { alert('Synchronization Data Corrupt'); }
   };
 
   const handleLogout = () => {
@@ -492,26 +536,34 @@ const App: React.FC = () => {
   // UI Renders
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-[#F1F5F9] flex flex-col items-center justify-center p-6">
-        <div className="w-full max-w-sm space-y-8">
-          <div className="text-center space-y-3">
-            <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] mx-auto flex items-center justify-center shadow-2xl rotate-3">
-              <Zap className="text-white fill-white" size={40} />
+      <div className="min-h-screen bg-[#F1F5F9] flex flex-col items-center justify-center p-8">
+        <div className="w-full max-w-sm space-y-12">
+          <div className="text-center space-y-4">
+            <div className="w-24 h-24 bg-indigo-600 rounded-[2.5rem] mx-auto flex items-center justify-center shadow-3xl shadow-indigo-200 rotate-6 hover:rotate-0 transition-transform duration-500">
+              <Zap className="text-white fill-white" size={48} />
             </div>
-            <h1 className="text-3xl font-black text-slate-800 uppercase mt-6 tracking-tighter">HSC ELITE</h1>
-            <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em]">Smart Mastery Platform</p>
+            <div className="space-y-1">
+              <h1 className="text-4xl font-black text-slate-800 uppercase tracking-tighter">HSC ELITE</h1>
+              <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.4em]">The Intelligence Layer</p>
+            </div>
           </div>
-          <div className="bg-white rounded-[2.5rem] p-8 shadow-2xl border border-slate-100">
-            <form onSubmit={handleAuth} className="space-y-4">
-               <input type="text" value={usernameInput} onChange={e => setUsernameInput(e.target.value)} placeholder="Username" className="w-full p-4 rounded-2xl bg-slate-50 border-2 border-slate-50 focus:border-indigo-500 outline-none font-bold text-sm text-black" />
-               <input type="password" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} placeholder="Password" className="w-full p-4 rounded-2xl bg-slate-50 border-2 border-slate-50 focus:border-indigo-500 outline-none font-bold text-sm text-black" />
-               {authError && <p className="text-center text-red-500 text-[10px] font-bold uppercase">{authError}</p>}
-               <button type="submit" className="w-full py-5 bg-indigo-600 text-white font-black rounded-2xl uppercase tracking-widest text-xs shadow-lg shadow-indigo-200 active:scale-95 transition-transform">{isSignup ? 'Create Account' : 'Login Securely'}</button>
+          <div className="bg-white rounded-[3rem] p-10 shadow-2xl border border-slate-100/50">
+            <form onSubmit={handleAuth} className="space-y-5">
+               <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Username</label>
+                  <input type="text" value={usernameInput} onChange={e => setUsernameInput(e.target.value)} placeholder="Enter alias..." className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-slate-50 focus:border-indigo-500 focus:bg-white outline-none font-bold text-sm text-black transition-all" />
+               </div>
+               <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Security Key</label>
+                  <input type="password" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} placeholder="••••••••" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-slate-50 focus:border-indigo-500 focus:bg-white outline-none font-bold text-sm text-black transition-all" />
+               </div>
+               {authError && <p className="text-center text-red-500 text-[10px] font-black uppercase bg-red-50 py-3 rounded-xl border border-red-100 animate-bounce">{authError}</p>}
+               <button type="submit" className="w-full py-6 bg-indigo-600 text-white font-black rounded-2xl uppercase tracking-widest text-xs shadow-xl shadow-indigo-100 active:scale-95 transition-all mt-4">{isSignup ? 'Initialize Account' : 'Authenticate Access'}</button>
             </form>
-            <div className="mt-6 flex flex-col gap-4">
-               <button onClick={() => setIsSignup(!isSignup)} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest text-center">{isSignup ? 'Back to Login' : 'Join as New Student'}</button>
-               <div className="h-px bg-slate-50" />
-               <button onClick={() => setIsSyncModalOpen(true)} className="w-full py-4 bg-blue-50 text-blue-600 font-black rounded-2xl text-[10px] uppercase tracking-widest">Restore Profile</button>
+            <div className="mt-8 flex flex-col gap-5">
+               <button onClick={() => setIsSignup(!isSignup)} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest text-center hover:opacity-70">{isSignup ? 'Switch to Login' : 'Register New Cadet'}</button>
+               <div className="h-px bg-slate-100" />
+               <button onClick={() => setIsSyncModalOpen(true)} className="w-full py-5 bg-slate-50 text-slate-500 font-black rounded-2xl text-[10px] uppercase tracking-widest border border-slate-100 active:bg-slate-100 transition-colors">Restore Profile Key</button>
             </div>
           </div>
         </div>
@@ -520,67 +572,73 @@ const App: React.FC = () => {
   }
 
   const renderDashboard = () => (
-    <div className="p-4 space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
-         <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-black shadow-lg shadow-indigo-100">{currentUser.username[0].toUpperCase()}</div>
+    <div className="p-6 space-y-8 animate-in fade-in duration-700">
+      <div className="flex justify-between items-center bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
+         <div className="flex items-center gap-5">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-black shadow-xl shadow-indigo-100 text-xl border-4 border-white">
+              {currentUser.username[0].toUpperCase()}
+            </div>
             <div>
-               <h2 className="text-base font-black text-slate-800 leading-none">@{currentUser.username}</h2>
-               <p className="text-[10px] text-green-500 font-black uppercase tracking-widest mt-1 flex items-center gap-1"><Circle size={8} fill="currentColor" className="animate-pulse" /> Active Session</p>
+               <h2 className="text-lg font-black text-slate-800 leading-none">@{currentUser.username}</h2>
+               <div className="flex items-center gap-2 mt-2">
+                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                 <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Active System</p>
+               </div>
             </div>
          </div>
-         <div className="flex gap-2">
-            <button onClick={() => setIsSyncModalOpen(true)} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><Globe size={20} /></button>
-            <button onClick={handleLogout} className="p-2.5 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all"><LogOut size={20} /></button>
+         <div className="flex gap-2.5">
+            <button onClick={() => setIsSyncModalOpen(true)} className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><Globe size={22} /></button>
+            <button onClick={handleLogout} className="p-3 bg-red-50 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all shadow-sm"><LogOut size={22} /></button>
          </div>
       </div>
 
-      <div className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 rounded-[2.5rem] p-7 text-white shadow-2xl relative overflow-hidden ring-4 ring-white/10">
-         <button onClick={() => setIsLevelsModalOpen(true)} className="absolute top-6 right-6 p-2 bg-white/20 rounded-xl hover:bg-white/30 transition-all"><QrCode size={20} /></button>
-         <div className="flex items-center gap-5 mb-6">
-            <div className="text-6xl drop-shadow-2xl animate-bounce duration-[3s]">{stats?.currentLevel.emoji}</div>
-            <div>
-               <h2 className="text-3xl font-black uppercase tracking-tighter leading-none">{stats?.currentLevel.name}</h2>
-               <p className="text-indigo-200 text-xs font-bold mt-1 uppercase tracking-widest">Lvl {stats?.currentLevel.level} • {stats?.xp.toLocaleString()} XP</p>
+      <div className="bg-gradient-to-br from-indigo-700 via-indigo-800 to-slate-900 rounded-[3rem] p-8 text-white shadow-3xl relative overflow-hidden group">
+         <div className="absolute top-0 right-0 p-16 opacity-5 rotate-12 group-hover:rotate-45 transition-transform duration-1000"><Star size={200} /></div>
+         <button onClick={() => setIsLevelsModalOpen(true)} className="absolute top-8 right-8 p-3 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 hover:bg-white/20 transition-all"><QrCode size={22} /></button>
+         <div className="flex items-center gap-6 mb-8 relative z-10">
+            <div className="text-7xl drop-shadow-3xl animate-float">{stats?.currentLevel.emoji}</div>
+            <div className="space-y-1">
+               <h2 className="text-4xl font-black uppercase tracking-tighter leading-none">{stats?.currentLevel.name}</h2>
+               <p className="text-indigo-200/80 text-[11px] font-black uppercase tracking-[0.3em]">Grade Level {stats?.currentLevel.level} • {stats?.xp.toLocaleString()} XP</p>
             </div>
          </div>
-         <div className="bg-black/20 p-5 rounded-3xl space-y-3 backdrop-blur-md border border-white/5">
-            <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
-               <span>Next: {stats?.nextLevel?.name || 'GOD MODE'}</span>
-               <span>{Math.round(stats?.progressToNext || 0)}%</span>
+         <div className="bg-white/10 p-6 rounded-[2rem] space-y-4 backdrop-blur-xl border border-white/10 shadow-inner">
+            <div className="flex justify-between text-[11px] font-black uppercase tracking-widest">
+               <span className="text-white">To {stats?.nextLevel?.name || 'LIMIT'}</span>
+               <span className="text-indigo-100">{Math.round(stats?.progressToNext || 0)}%</span>
             </div>
-            <ProgressBar progress={stats?.progressToNext || 0} color="bg-yellow-400" className="h-2.5" />
+            <ProgressBar progress={stats?.progressToNext || 0} color="bg-indigo-400" className="h-3 shadow-[0_0_15px_rgba(129,140,248,0.5)]" />
          </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-         <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col items-center shadow-sm">
-            <Target className="text-red-500 mb-3" size={28} />
-            <span className="text-3xl font-black text-slate-800">{Math.round(stats?.percent || 0)}%</span>
-            <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Mastery</span>
+      <div className="grid grid-cols-2 gap-5">
+         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 flex flex-col items-center shadow-xl shadow-slate-100/50 hover:scale-105 transition-transform">
+            <div className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mb-4"><Target size={28} /></div>
+            <span className="text-4xl font-black text-slate-800 tracking-tighter">{Math.round(stats?.percent || 0)}%</span>
+            <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Total Mastery</span>
          </div>
-         <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col items-center shadow-sm">
-            <UserCheck className="text-green-500 mb-3" size={28} />
-            <span className="text-3xl font-black text-slate-800">{(currentUser.followedUsers || []).length}</span>
-            <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Followers</span>
+         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 flex flex-col items-center shadow-xl shadow-slate-100/50 hover:scale-105 transition-transform">
+            <div className="w-12 h-12 bg-green-50 text-green-500 rounded-2xl flex items-center justify-center mb-4"><Users size={28} /></div>
+            <span className="text-4xl font-black text-slate-800 tracking-tighter">{(currentUser.followedUsers || []).length}</span>
+            <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Circle Size</span>
          </div>
       </div>
 
-      <div className="space-y-4">
-         <div className="flex justify-between items-center px-2">
-            <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2">
-               <Award className="text-indigo-500" size={16} /> Proficiency
+      <div className="space-y-5">
+         <div className="flex justify-between items-center px-4">
+            <h3 className="font-black text-slate-800 text-[11px] uppercase tracking-[0.3em] flex items-center gap-2">
+               <Award className="text-indigo-600" size={18} /> High Priority
             </h3>
-            <button onClick={() => setActiveTab('subjects')} className="text-[9px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-1">View All <ChevronRight size={12} /></button>
+            <button onClick={() => setActiveTab('subjects')} className="text-[10px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-1.5 hover:translate-x-1 transition-transform">View All Pathways <ChevronRight size={14} /></button>
          </div>
-         <div className="space-y-3">
+         <div className="space-y-4">
             {Object.entries(stats?.subjectDetails || {}).slice(0, 3).map(([name, d]: [string, any]) => (
-               <div key={name} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:border-indigo-100 transition-all cursor-pointer" onClick={() => { setSelectedSubject(name); setActiveTab('subjects'); }}>
-                  <div className="flex justify-between items-center mb-4">
-                     <span className="font-black text-sm text-slate-700 uppercase tracking-tight">{name}</span>
-                     <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-xl">{Math.round(d.percent)}%</span>
+               <div key={name} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-indigo-100/30 hover:border-indigo-100 transition-all cursor-pointer group" onClick={() => { setSelectedSubject(name); setActiveTab('subjects'); }}>
+                  <div className="flex justify-between items-center mb-5">
+                     <span className="font-black text-base text-slate-700 uppercase tracking-tight group-hover:text-indigo-600 transition-colors">{name}</span>
+                     <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-4 py-1.5 rounded-2xl border border-indigo-100 shadow-sm">{Math.round(d.percent)}%</span>
                   </div>
-                  <ProgressBar progress={d.percent} color="bg-indigo-600" className="h-2" />
+                  <ProgressBar progress={d.percent} color="bg-indigo-600" className="h-2.5" />
                </div>
             ))}
          </div>
@@ -595,29 +653,27 @@ const App: React.FC = () => {
     ].sort((a, b) => b.xp - a.xp);
 
     return (
-      <div className="p-4 space-y-6 animate-in fade-in duration-300 pb-12">
-         {/* Refined Student Hub Header */}
-         <div className="bg-gradient-to-br from-indigo-700 to-indigo-900 rounded-[4rem] px-10 py-8 text-white shadow-2xl flex items-center justify-between relative overflow-hidden group">
-            <div className="absolute top-0 right-[-10%] opacity-10 group-hover:rotate-12 transition-transform duration-700"><Globe size={180} /></div>
-            <div className="relative z-10 space-y-1">
-               <h2 className="text-4xl font-black uppercase tracking-tighter leading-none">STUDENT HUB</h2>
-               <p className="text-indigo-200/60 text-[10px] font-black uppercase tracking-[0.3em]">Real-time Peer Compare</p>
+      <div className="p-6 space-y-8 animate-in fade-in duration-500 pb-20">
+         <div className="bg-slate-900 rounded-[3.5rem] px-10 py-10 text-white shadow-3xl flex items-center justify-between relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+            <div className="relative z-10 space-y-2">
+               <h2 className="text-4xl font-black uppercase tracking-tighter leading-tight">STUDENT HUB</h2>
+               <p className="text-indigo-400 text-[11px] font-black uppercase tracking-[0.3em] flex items-center gap-2"><Globe size={14} /> Peer Network Status</p>
             </div>
             <button 
               onClick={() => setIsSyncModalOpen(true)} 
-              className="w-16 h-16 bg-white/20 backdrop-blur-md text-white rounded-full shadow-xl flex items-center justify-center hover:bg-white hover:text-indigo-700 active:scale-90 transition-all relative z-10 border border-white/30"
+              className="w-20 h-20 bg-indigo-600 text-white rounded-[2rem] shadow-2xl shadow-indigo-500/50 flex items-center justify-center hover:bg-white hover:text-indigo-600 active:scale-90 transition-all relative z-10 border-4 border-slate-800"
             >
-              <UserPlus size={28} />
+              <UserPlus size={32} />
             </button>
          </div>
 
-         {/* Leaderboard User List */}
-         <div className="space-y-4">
+         <div className="space-y-5">
             {list.length === 1 && (
-              <div className="text-center py-16 px-8 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-100">
-                <Users size={48} className="mx-auto text-slate-200 mb-4" />
-                <p className="text-slate-400 text-xs font-bold leading-relaxed uppercase tracking-wider mb-6">Your circle is empty.</p>
-                <button onClick={() => setIsSyncModalOpen(true)} className="px-8 py-4 bg-indigo-50 text-indigo-600 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-indigo-100 transition-all">Add Real Friends</button>
+              <div className="text-center py-20 px-10 bg-white rounded-[3rem] border-4 border-dashed border-slate-100 flex flex-col items-center">
+                <Users size={64} className="text-slate-200 mb-6" />
+                <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.2em] leading-relaxed mb-8">No peers found in your sector.</p>
+                <button onClick={() => setIsSyncModalOpen(true)} className="px-10 py-5 bg-indigo-50 text-indigo-600 rounded-[2rem] text-[10px] font-black uppercase tracking-[0.3em] hover:bg-indigo-100 transition-all border border-indigo-100 shadow-sm">Sync with Real Friends</button>
               </div>
             )}
             {list.map((u, idx) => {
@@ -627,47 +683,44 @@ const App: React.FC = () => {
                 <div 
                   key={u.username} 
                   onClick={() => setViewingUser(u)} 
-                  className={`p-6 rounded-[2.5rem] border flex items-center gap-4 transition-all active:scale-[0.98] cursor-pointer group bg-gradient-to-br from-indigo-600 to-indigo-700 border-indigo-400/30 text-white shadow-2xl shadow-indigo-100/50 relative overflow-hidden`}
+                  className={`p-7 rounded-[3rem] border flex items-center gap-6 transition-all active:scale-[0.98] cursor-pointer group relative overflow-hidden ${isMe ? 'bg-indigo-600 border-indigo-400 text-white shadow-2xl shadow-indigo-200' : 'bg-white border-slate-100 text-slate-800 shadow-xl shadow-slate-100/50 hover:border-indigo-200'}`}
                 >
-                   {/* Rank Badge */}
-                   <div className="w-10 text-center font-black text-lg drop-shadow-md">
-                      {idx === 0 ? '👑' : `#${idx+1}`}
+                   <div className="w-10 text-center font-black text-2xl">
+                      {idx === 0 ? '🏆' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx+1}`}
                    </div>
 
-                   <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                         <span className="font-black text-base uppercase tracking-tight">{u.username} {isMe && '(YOU)'}</span>
-                         <span className={`text-[10px] px-2.5 py-1 rounded-xl font-black uppercase bg-white/20 text-white backdrop-blur-sm border border-white/10`}>
-                           Lvl {lvl.level}
+                   <div className="flex-1 space-y-3">
+                      <div className="flex items-center gap-3">
+                         <span className="font-black text-lg uppercase tracking-tight leading-none">{u.username} {isMe && '(YOU)'}</span>
+                         <span className={`text-[9px] px-3 py-1 rounded-full font-black uppercase tracking-widest border ${isMe ? 'bg-white/20 border-white/20' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+                           LVL {lvl.level}
                          </span>
                       </div>
-                      <div className="flex items-center gap-4">
-                         <div className="flex-1">
-                           <ProgressBar 
-                             progress={(u.xp / 30000) * 100} 
-                             color="bg-white" 
-                             className="h-2 shadow-[0_0_10px_rgba(255,255,255,0.3)]" 
-                           />
+                      <div className="space-y-2">
+                         <ProgressBar 
+                           progress={(u.xp / 30000) * 100} 
+                           color={isMe ? 'bg-white' : 'bg-indigo-600'} 
+                           className="h-2.5 opacity-90" 
+                         />
+                         <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-[0.2em]">
+                           <span className={isMe ? 'text-indigo-100' : 'text-slate-400'}>{lvl.name}</span>
+                           <span className={isMe ? 'text-white' : 'text-indigo-600'}>{u.xp.toLocaleString()} XP</span>
                          </div>
-                         <span className={`text-[10px] font-black uppercase tracking-widest text-indigo-100 drop-shadow-sm`}>
-                           {u.xp.toLocaleString()} XP
-                         </span>
                       </div>
                    </div>
-
-                   {/* Crown Icon Decoration for Top Rank */}
-                   {idx === 0 && <Award className="absolute -right-4 -bottom-4 w-16 h-16 text-white/5" />}
                    
-                   <ChevronRight className={`transition-all text-white/40 group-hover:text-white group-hover:translate-x-1`} size={24} />
+                   <div className={`p-2 rounded-2xl ${isMe ? 'bg-white/10' : 'bg-slate-50 text-slate-300'} group-hover:translate-x-1 transition-transform`}>
+                     <ChevronRight size={24} />
+                   </div>
                 </div>
               );
             })}
          </div>
 
          {list.length > 1 && (
-           <div className="p-6 bg-slate-50/50 rounded-3xl border border-slate-100 text-center">
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.15em] leading-relaxed">
-                PEER DATA IS A SNAPSHOT. TO SEE THEIR LATEST UPDATES, ASK THEM FOR A <span className="text-indigo-600 border-b-2 border-indigo-200">SYNC LINK</span>.
+           <div className="p-8 bg-slate-50/50 rounded-[2.5rem] border border-slate-100 text-center border-dashed">
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] leading-relaxed">
+                PEER TELEMETRY IS OFFLINE. GENERATE A NEW <span className="text-indigo-600 border-b-2 border-indigo-200">INVITE LINK</span> TO SHARE YOUR LATEST SCORE.
               </p>
            </div>
          )}
@@ -676,22 +729,22 @@ const App: React.FC = () => {
   };
 
   const renderSubjectList = () => (
-    <div className="p-4 space-y-5 animate-in fade-in duration-300">
-      <h2 className="text-3xl font-black text-slate-800 uppercase tracking-tighter px-2">Pathways</h2>
-      <div className="grid grid-cols-1 gap-4">
+    <div className="p-6 space-y-6 animate-in fade-in duration-500">
+      <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tighter px-2">Pathways</h2>
+      <div className="grid grid-cols-1 gap-5">
          {Object.keys(INITIAL_SUBJECTS).map(n => {
            const d = stats?.subjectDetails[n];
            return (
-             <div key={n} onClick={() => setSelectedSubject(n)} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center justify-between group active:bg-slate-50 cursor-pointer hover:border-indigo-200 transition-all">
-                <div className="flex items-center gap-5">
-                   <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner"><BookOpen size={28} /></div>
-                   <div>
-                      <h4 className="font-black text-slate-800 uppercase tracking-tight group-hover:text-indigo-600">{n}</h4>
-                      <p className="text-[10px] text-indigo-500 font-black uppercase tracking-widest">{Math.round(d.percent)}% Complete</p>
+             <div key={n} onClick={() => setSelectedSubject(n)} className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-100/50 flex items-center justify-between group active:bg-slate-50 cursor-pointer hover:border-indigo-400 transition-all">
+                <div className="flex items-center gap-6">
+                   <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-[2rem] flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner border border-indigo-100"><BookOpen size={32} /></div>
+                   <div className="space-y-1">
+                      <h4 className="font-black text-lg text-slate-800 uppercase tracking-tight group-hover:text-indigo-600 transition-colors">{n}</h4>
+                      <p className="text-[11px] text-indigo-500 font-black uppercase tracking-widest">{Math.round(d.percent)}% COMPLETED</p>
                    </div>
                 </div>
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-slate-200 group-hover:bg-indigo-50 group-hover:text-indigo-500 transition-all">
-                   <ChevronRight size={24} />
+                <div className="w-12 h-12 rounded-full flex items-center justify-center text-slate-300 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-all border border-transparent group-hover:border-indigo-100">
+                   <ChevronRight size={32} />
                 </div>
              </div>
            );
@@ -703,13 +756,16 @@ const App: React.FC = () => {
   const renderSubjectDetails = (subjectName: string) => {
     const sub = INITIAL_SUBJECTS[subjectName];
     return (
-      <div className="animate-in slide-in-from-right-4 duration-300">
-        <div className="p-5 bg-white border-b sticky top-0 z-10 flex items-center justify-between shadow-sm">
-          <button onClick={() => setSelectedSubject(null)} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest flex items-center gap-1 bg-indigo-50 px-4 py-2 rounded-xl active:scale-90"><ChevronLeft size={16} /> Back</button>
-          <h2 className="text-xs font-black text-slate-800 uppercase tracking-widest">{subjectName}</h2>
-          <div className="w-10"></div>
+      <div className="animate-in slide-in-from-right-12 duration-500">
+        <div className="p-6 bg-white border-b border-slate-100 sticky top-0 z-40 flex items-center justify-between backdrop-blur-xl bg-white/90">
+          <button onClick={() => setSelectedSubject(null)} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 bg-indigo-50 px-6 py-3 rounded-2xl active:scale-90 transition-all shadow-sm border border-indigo-100"><ChevronLeft size={18} /> Back</button>
+          <div className="text-center">
+            <h2 className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em]">Knowledge Pathway</h2>
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">{subjectName}</h3>
+          </div>
+          <div className="w-20"></div>
         </div>
-        <div className="p-4 space-y-4 pb-24">
+        <div className="p-6 space-y-5 pb-32">
            {Object.keys(sub.chapters).map(chapName => {
               const topics = sub.chapters[chapName];
               const doneCount = topics.filter(t => currentUser.progress.completedTopics[`${subjectName}-${chapName}-${t}`]).length;
@@ -717,31 +773,32 @@ const App: React.FC = () => {
               const isExpanded = selectedChapter === chapName;
 
               return (
-                <div key={chapName} className={`bg-white rounded-3xl border transition-all ${isExpanded ? 'border-indigo-400 ring-4 ring-indigo-50 shadow-xl' : 'border-slate-100 shadow-sm'}`}>
-                   <div onClick={() => setSelectedChapter(isExpanded ? null : chapName)} className={`p-5 flex flex-col cursor-pointer ${isExpanded ? 'bg-indigo-50/10' : ''}`}>
-                      <div className="flex justify-between items-center mb-4">
-                         <h4 className="font-black text-slate-700 text-xs uppercase tracking-tight flex-1 mr-4">{chapName}</h4>
-                         <span className={`text-[9px] font-black px-3 py-1 rounded-xl uppercase ${p === 100 ? 'bg-green-100 text-green-700' : 'bg-indigo-600 text-white'}`}>{Math.round(p)}%</span>
+                <div key={chapName} className={`bg-white rounded-[3rem] border transition-all duration-300 ${isExpanded ? 'border-indigo-400 ring-8 ring-indigo-50 shadow-2xl scale-[1.02]' : 'border-slate-100 shadow-lg shadow-slate-200/50'}`}>
+                   <div onClick={() => setSelectedChapter(isExpanded ? null : chapName)} className={`p-7 flex flex-col cursor-pointer ${isExpanded ? 'bg-indigo-50/20' : ''}`}>
+                      <div className="flex justify-between items-start mb-6">
+                         <h4 className="font-black text-slate-700 text-sm uppercase tracking-tight flex-1 mr-6 leading-tight">{chapName}</h4>
+                         <span className={`text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest border ${p === 100 ? 'bg-green-100 border-green-200 text-green-700' : 'bg-indigo-600 border-indigo-700 text-white shadow-lg shadow-indigo-200'}`}>{Math.round(p)}%</span>
                       </div>
-                      <ProgressBar progress={p} color={p === 100 ? 'bg-green-500' : 'bg-indigo-600'} className="h-1.5" />
+                      <ProgressBar progress={p} color={p === 100 ? 'bg-green-500' : 'bg-indigo-600'} className="h-3" />
                    </div>
                    {isExpanded && (
-                     <div className="p-5 bg-slate-50/50 border-t space-y-5 animate-in fade-in">
-                        <div className="grid grid-cols-2 gap-2">
+                     <div className="p-8 bg-slate-50/50 border-t border-slate-100 space-y-8 animate-in fade-in duration-500">
+                        <div className="grid grid-cols-2 gap-3">
                            {Object.values(PrepType).map(type => (
-                             <button key={type} onClick={() => toggleCheck(subjectName, chapName, type)} className={`p-3 rounded-2xl text-[9px] font-black uppercase border transition-all ${currentUser.progress.chapterCheckboxes[`${subjectName}-${chapName}-${type}`] ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300'}`}>
+                             <button key={type} onClick={() => toggleCheck(subjectName, chapName, type)} className={`py-4 px-2 rounded-2xl text-[9px] font-black uppercase tracking-widest border transition-all ${currentUser.progress.chapterCheckboxes[`${subjectName}-${chapName}-${type}`] ? 'bg-indigo-600 border-indigo-700 text-white shadow-xl shadow-indigo-100' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300'}`}>
                                 {type.replace('-', ' ')}
                              </button>
                            ))}
                         </div>
-                        <div className="space-y-2 pt-2 border-t border-slate-100">
+                        <div className="space-y-3 pt-6 border-t border-slate-200/50">
+                           <h5 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4">Core Concepts</h5>
                            {topics.map(t => (
-                             <div key={t} className="flex items-center justify-between bg-white p-4 rounded-2xl border border-slate-100 shadow-sm group hover:border-indigo-200 transition-all">
-                                <button onClick={() => toggleTopic(subjectName, chapName, t)} className="flex items-center gap-3 flex-1 text-left">
-                                   {currentUser.progress.completedTopics[`${subjectName}-${chapName}-${t}`] ? <CheckCircle2 className="text-green-500" size={20} /> : <Circle className="text-slate-200" size={20} />}
-                                   <span className={`text-xs font-black uppercase tracking-tight ${currentUser.progress.completedTopics[`${subjectName}-${chapName}-${t}`] ? 'text-slate-300 line-through' : 'text-slate-600'}`}>{t}</span>
+                             <div key={t} className="flex items-center justify-between bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm group hover:border-indigo-300 transition-all">
+                                <button onClick={() => toggleTopic(subjectName, chapName, t)} className="flex items-center gap-4 flex-1 text-left">
+                                   {currentUser.progress.completedTopics[`${subjectName}-${chapName}-${t}`] ? <CheckCircle2 className="text-green-500" size={24} /> : <Circle className="text-slate-200" size={24} />}
+                                   <span className={`text-xs font-bold uppercase tracking-tight ${currentUser.progress.completedTopics[`${subjectName}-${chapName}-${t}`] ? 'text-slate-300 line-through' : 'text-slate-600'}`}>{t}</span>
                                 </button>
-                                <button onClick={() => handleExplain(subjectName, chapName, t)} className="p-2 text-indigo-500 bg-indigo-50 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><Sparkles size={18} /></button>
+                                <button onClick={() => handleExplain(subjectName, chapName, t)} className="w-12 h-12 flex items-center justify-center text-indigo-600 bg-indigo-50 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><Sparkles size={20} /></button>
                              </div>
                            ))}
                         </div>
@@ -756,14 +813,17 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="max-w-md mx-auto min-h-screen flex flex-col bg-[#F8FAFC] select-none pb-28 font-sans">
+    <div className="max-w-md mx-auto min-h-screen flex flex-col bg-[#F8FAFC] select-none pb-28 font-sans overflow-x-hidden">
       {activeTab === 'dashboard' && (
-        <header className="p-6 pb-2 flex items-center justify-between">
+        <header className="p-8 pb-4 flex items-center justify-between">
            <div>
-              <h1 className="text-2xl font-black text-slate-800 tracking-tighter flex items-center gap-2">HSC ELITE <Zap className="text-yellow-400 fill-yellow-400" size={20} /></h1>
-              <p className="text-indigo-600 text-[10px] font-black uppercase tracking-[0.3em]">Mastery Intelligence</p>
+              <div className="flex items-center gap-2">
+                <h1 className="text-3xl font-black text-slate-800 tracking-tighter">HSC ELITE</h1>
+                <Zap className="text-indigo-600 fill-indigo-600" size={22} />
+              </div>
+              <p className="text-indigo-400 text-[11px] font-black uppercase tracking-[0.4em] mt-1">Intelligence Protocol</p>
            </div>
-           <button onClick={() => setIsLevelsModalOpen(true)} className="p-3 bg-white shadow-sm border border-slate-100 rounded-2xl text-slate-400 hover:text-indigo-600 transition-all active:scale-90"><QrCode size={22} /></button>
+           <button onClick={() => setIsLevelsModalOpen(true)} className="w-14 h-14 bg-white shadow-xl shadow-slate-200/50 border border-slate-100 rounded-[1.5rem] flex items-center justify-center text-indigo-600 hover:scale-110 active:scale-90 transition-all"><QrCode size={24} /></button>
         </header>
       )}
 
@@ -772,22 +832,25 @@ const App: React.FC = () => {
         {activeTab === 'subjects' && (selectedSubject ? renderSubjectDetails(selectedSubject) : renderSubjectList())}
         {activeTab === 'leaderboard' && renderLeaderboard()}
         {activeTab === 'aki' && (
-          <div className="p-8 flex flex-col items-center justify-center min-h-[75vh] text-center space-y-8 animate-in zoom-in-95">
-             <div className="w-32 h-32 bg-indigo-600 rounded-[3rem] flex items-center justify-center shadow-2xl rotate-6 hover:rotate-0 transition-transform duration-500"><Sparkles className="text-white" size={64} /></div>
-             <div className="space-y-4">
-                <h2 className="text-3xl font-black text-slate-800 uppercase tracking-tighter">AI Guide AKI</h2>
-                <p className="text-slate-400 text-xs font-bold uppercase leading-relaxed tracking-widest max-w-[280px]">Ask AKI to break down complex HSC topics into easy steps. Tap the sparkle icon next to any topic.</p>
+          <div className="p-10 flex flex-col items-center justify-center min-h-[75vh] text-center space-y-10 animate-in zoom-in-95 duration-500">
+             <div className="w-40 h-40 bg-indigo-600 rounded-[3.5rem] flex items-center justify-center shadow-3xl shadow-indigo-200 rotate-6 hover:rotate-0 transition-transform duration-700 relative">
+                <Sparkles className="text-white" size={80} />
+                <div className="absolute -top-4 -right-4 w-12 h-12 bg-yellow-400 rounded-2xl flex items-center justify-center text-white shadow-lg border-4 border-white animate-bounce"><BrainCircuit size={24} /></div>
              </div>
-             <button onClick={() => { setActiveTab('subjects'); setSelectedSubject(null); }} className="w-full max-w-xs py-5 bg-indigo-600 text-white font-black rounded-[2rem] shadow-xl shadow-indigo-100 uppercase tracking-[0.2em] text-xs active:scale-95 transition-all">Start Learning</button>
+             <div className="space-y-5">
+                <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tighter leading-tight">AI PROTOCOL: AKI</h2>
+                <p className="text-slate-400 text-xs font-bold uppercase leading-relaxed tracking-widest max-w-[300px]">Access expert breakdowns of complex HSC concepts. Access AKI by selecting the sparkle icon on any module.</p>
+             </div>
+             <button onClick={() => { setActiveTab('subjects'); setSelectedSubject(null); }} className="w-full max-w-xs py-6 bg-indigo-600 text-white font-black rounded-[2.5rem] shadow-2xl shadow-indigo-100 uppercase tracking-[0.3em] text-xs active:scale-95 transition-all">Initialize Learning</button>
           </div>
         )}
       </main>
 
-      <nav className="fixed bottom-6 left-6 right-6 max-w-md mx-auto bg-white/95 backdrop-blur-3xl border border-white shadow-[0_25px_50px_-12px_rgba(0,0,0,0.1)] rounded-[2.5rem] px-8 py-5 safe-bottom z-40 flex justify-between items-center ring-1 ring-black/5">
-        <NavBtn active={activeTab === 'dashboard'} icon={<LayoutDashboard size={24} />} onClick={() => setActiveTab('dashboard')} />
-        <NavBtn active={activeTab === 'subjects'} icon={<BookOpen size={24} />} onClick={() => setActiveTab('subjects')} />
-        <NavBtn active={activeTab === 'leaderboard'} icon={<Globe size={24} />} onClick={() => setActiveTab('leaderboard')} />
-        <NavBtn active={activeTab === 'aki'} icon={<Sparkles size={24} />} onClick={() => setActiveTab('aki')} />
+      <nav className="fixed bottom-8 left-8 right-8 max-w-md mx-auto bg-white/80 backdrop-blur-3xl border border-white/50 shadow-[0_40px_80px_-20px_rgba(79,70,229,0.15)] rounded-[3rem] px-10 py-6 safe-bottom z-[90] flex justify-between items-center ring-1 ring-black/5">
+        <NavBtn active={activeTab === 'dashboard'} icon={<LayoutDashboard size={28} />} onClick={() => setActiveTab('dashboard')} />
+        <NavBtn active={activeTab === 'subjects'} icon={<BookOpen size={28} />} onClick={() => setActiveTab('subjects')} />
+        <NavBtn active={activeTab === 'leaderboard'} icon={<Globe size={28} />} onClick={() => setActiveTab('leaderboard')} />
+        <NavBtn active={activeTab === 'aki'} icon={<Sparkles size={28} />} onClick={() => setActiveTab('aki')} />
       </nav>
 
       <AKIModal isOpen={akiModal.open} onClose={() => setAkiModal(prev => ({ ...prev, open: false }))} title={akiModal.title} content={akiModal.content} loading={akiModal.loading} />
@@ -799,29 +862,30 @@ const App: React.FC = () => {
 };
 
 const NavBtn: React.FC<{ active: boolean; icon: React.ReactNode; onClick: () => void }> = ({ active, icon, onClick }) => (
-  <button onClick={onClick} className={`p-2 rounded-2xl transition-all duration-300 ${active ? 'text-indigo-600 scale-125 bg-indigo-50' : 'text-slate-300 hover:text-slate-400'}`}>{icon}</button>
+  <button onClick={onClick} className={`p-3 rounded-2xl transition-all duration-500 ease-spring ${active ? 'text-indigo-600 scale-125 bg-indigo-50 shadow-inner' : 'text-slate-300 hover:text-slate-400 active:scale-90'}`}>{icon}</button>
 );
 
 const LevelsInfoModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-white rounded-[2.5rem] w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="p-6 border-b flex justify-between items-center bg-indigo-600 text-white">
-          <h3 className="text-xl font-black uppercase tracking-tighter">Evolution System</h3>
-          <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-full"><X size={28} /></button>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+      <div className="bg-white rounded-[3.5rem] w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-indigo-600 text-white relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-indigo-600 to-indigo-800" />
+          <h3 className="text-2xl font-black uppercase tracking-tighter relative z-10">Evolution Matrix</h3>
+          <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-2xl transition-all relative z-10"><X size={32} /></button>
         </div>
-        <div className="p-6 overflow-y-auto flex-1 space-y-4">
+        <div className="p-8 overflow-y-auto flex-1 space-y-5 bg-slate-50">
            {LEVELS.map(lvl => (
-             <div key={lvl.level} className="flex items-center justify-between p-4 rounded-3xl border border-slate-100 bg-white hover:border-indigo-200 transition-colors">
-                <div className="flex items-center gap-4">
-                   <span className="text-3xl drop-shadow-md">{lvl.emoji}</span>
+             <div key={lvl.level} className="flex items-center justify-between p-6 rounded-[2.5rem] border border-slate-100 bg-white hover:border-indigo-200 transition-all shadow-sm">
+                <div className="flex items-center gap-6">
+                   <span className="text-4xl drop-shadow-xl animate-float">{lvl.emoji}</span>
                    <div>
-                      <h4 className={`text-sm font-black ${lvl.color}`}>Lvl {lvl.level}: {lvl.name}</h4>
-                      <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">{lvl.min.toLocaleString()} - {lvl.max.toLocaleString()} XP</p>
+                      <h4 className={`text-base font-black ${lvl.color} leading-none mb-2`}>LVL {lvl.level}: {lvl.name}</h4>
+                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{lvl.min.toLocaleString()} - {lvl.max.toLocaleString()} XP</p>
                    </div>
                 </div>
-                {lvl.level >= 11 && <Zap className="text-amber-500 fill-amber-500 w-4 h-4 animate-pulse" />}
+                {lvl.level >= 11 && <Zap className="text-amber-500 fill-amber-500 w-5 h-5 animate-pulse" />}
              </div>
            ))}
         </div>
