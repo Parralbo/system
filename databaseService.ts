@@ -7,16 +7,13 @@ import { UserProfile } from './types';
  * Prevents "Cannot read properties of undefined (reading 'VITE_SUPABASE_URL')" errors.
  */
 const getEnvVar = (name: string): string => {
-  // 1. Try process.env first (common in many Node-based or polyfilled environments)
   try {
     if (typeof process !== 'undefined' && process.env && process.env[name]) {
       return process.env[name] as string;
     }
   } catch (e) {}
 
-  // 2. Try import.meta.env (Vite standard)
   try {
-    // We use a safe check to avoid the "Cannot read properties of undefined" crash
     if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
       return (import.meta as any).env[name] || '';
     }
@@ -34,17 +31,19 @@ export const cloudSync = {
   isAvailable: () => !!supabase,
 
   async checkConnection(): Promise<{ok: boolean, message: string}> {
-    if (!supabase) return { ok: false, message: "Keys Missing" };
+    if (!supabase) return { ok: false, message: "Supabase Keys Missing" };
     try {
-      // Test query to see if table is accessible
+      // Test query to verify if the 'profiles' relation exists
       const { error } = await supabase.from('profiles').select('username').limit(1);
       if (error) {
-        if (error.code === '42P01') return { ok: false, message: "Run SQL Script" };
-        return { ok: false, message: error.message };
+        if (error.code === '42P01') {
+          return { ok: false, message: "Database Setup Required: Table 'profiles' not found." };
+        }
+        return { ok: false, message: `DB Error: ${error.message}` };
       }
       return { ok: true, message: "Connected" };
     } catch (e) {
-      return { ok: false, message: "Network Error" };
+      return { ok: false, message: "Network connection lost" };
     }
   },
 
@@ -54,7 +53,7 @@ export const cloudSync = {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('username', username.toLowerCase())
+        .eq('username', username.toLowerCase().trim())
         .maybeSingle();
       
       if (error) {
@@ -63,7 +62,6 @@ export const cloudSync = {
       }
       
       if (data) {
-        // Map snake_case from DB to camelCase in App
         return {
           username: data.username,
           password: data.password,
@@ -85,7 +83,7 @@ export const cloudSync = {
       const { error } = await supabase
         .from('profiles')
         .upsert({
-          username: user.username.toLowerCase(),
+          username: user.username.toLowerCase().trim(),
           password: user.password,
           xp: user.xp,
           progress: user.progress,

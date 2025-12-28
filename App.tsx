@@ -11,27 +11,18 @@ import {
   CheckCircle2, 
   Circle, 
   Target, 
-  BrainCircuit, 
-  Award,
   Zap,
-  Star,
   ChevronLeft,
   Loader2,
   X,
-  UserPlus,
   LogOut,
   Users,
   Sparkles,
   Globe,
-  Share2,
-  QrCode,
-  Link2,
   CloudSync,
-  ShieldCheck,
-  RefreshCcw,
-  AlertTriangle,
   Wifi,
-  WifiOff
+  WifiOff,
+  RefreshCw
 } from 'lucide-react';
 import { getTopicExplanation } from './geminiService';
 import { cloudSync } from './databaseService';
@@ -108,7 +99,6 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'subjects' | 'leaderboard' | 'aki'>('dashboard');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
-  const [isLevelsModalOpen, setIsLevelsModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<{ok: boolean, message: string}>({ ok: false, message: "Checking..." });
   
@@ -127,11 +117,17 @@ const App: React.FC = () => {
     loading: false
   });
 
+  const checkCloudHealth = async () => {
+    setCloudStatus({ ok: false, message: "Checking..." });
+    const health = await cloudSync.checkConnection();
+    setCloudStatus(health);
+    return health;
+  };
+
   // --- Session Management ---
   useEffect(() => {
     const restoreSession = async () => {
-      const health = await cloudSync.checkConnection();
-      setCloudStatus(health);
+      const health = await checkCloudHealth();
 
       const savedAlias = localStorage.getItem('hsc-elite-session');
       if (savedAlias) {
@@ -180,8 +176,7 @@ const App: React.FC = () => {
       console.error("Sync Error:", result.error);
     }
     
-    const health = await cloudSync.checkConnection();
-    setCloudStatus(health);
+    await checkCloudHealth();
   }, []);
 
   const updateProgress = useCallback((newProgress: ProgressState) => {
@@ -227,9 +222,12 @@ const App: React.FC = () => {
     if (!u || !p) { setAuthError('Credentials Missing'); setIsLoading(false); return; }
 
     try {
-      const health = await cloudSync.checkConnection();
-      setCloudStatus(health);
-      if (!health.ok) { setAuthError(`Cloud Error: ${health.message}`); setIsLoading(false); return; }
+      const health = await checkCloudHealth();
+      if (!health.ok) { 
+        setAuthError(health.message); 
+        setIsLoading(false); 
+        return; 
+      }
 
       if (isSignup) {
         const cloudUser = await cloudSync.getUser(u);
@@ -330,7 +328,7 @@ const App: React.FC = () => {
             </div>
             <div className="space-y-1">
               <h1 className="text-4xl font-black text-white uppercase tracking-tighter">HSC ELITE</h1>
-              <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.4em]">Supabase Linked</p>
+              <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.4em]">Multi-Platform Study Hub</p>
             </div>
           </div>
           <div className="bg-white/5 backdrop-blur-xl rounded-[3rem] p-10 shadow-2xl border border-white/10">
@@ -343,7 +341,16 @@ const App: React.FC = () => {
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Security Key</label>
                   <input type="password" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} placeholder="••••••••" className="w-full p-5 rounded-2xl bg-white/5 border-2 border-white/5 focus:border-indigo-500 outline-none font-bold text-sm text-white transition-all" />
                </div>
-               {authError && <div className="text-center text-red-400 text-[9px] font-black uppercase bg-red-500/10 py-3 px-2 rounded-xl border border-red-500/20">{authError}</div>}
+               {authError && (
+                  <div className="flex flex-col gap-2 p-3 rounded-xl border border-red-500/20 bg-red-500/10">
+                    <p className="text-center text-red-400 text-[9px] font-black uppercase">{authError}</p>
+                    {authError.includes("profiles") && (
+                      <button type="button" onClick={checkCloudHealth} className="flex items-center justify-center gap-1 text-[8px] font-black text-indigo-400 uppercase tracking-widest hover:text-white">
+                        <RefreshCw size={10} className={cloudStatus.message === "Checking..." ? "animate-spin" : ""} /> Retry Cloud Check
+                      </button>
+                    )}
+                  </div>
+               )}
                <button type="submit" disabled={isLoading} className="w-full py-6 bg-indigo-600 text-white font-black rounded-2xl uppercase tracking-widest text-xs shadow-xl active:scale-95 transition-all mt-4 flex items-center justify-center gap-2">
                  {isLoading ? <Loader2 size={18} className="animate-spin" /> : (isSignup ? 'Register to Cloud' : 'Access Profile')}
                </button>
@@ -369,13 +376,13 @@ const App: React.FC = () => {
               <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border ${cloudStatus.ok ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
                 {cloudStatus.ok ? <Wifi size={10} className="text-green-500" /> : <WifiOff size={10} className="text-red-500" />}
                 <span className={`text-[8px] font-black uppercase tracking-widest ${cloudStatus.ok ? 'text-green-600' : 'text-red-600'}`}>
-                  {cloudStatus.ok ? 'Cloud Active' : cloudStatus.message}
+                  {cloudStatus.ok ? 'Cloud Syncing' : 'Offline Mode'}
                 </span>
               </div>
             </div>
          </div>
          <div className="flex gap-2">
-            <button onClick={() => setIsLevelsModalOpen(true)} className="w-12 h-12 bg-white shadow-xl shadow-slate-200/50 border border-slate-100 rounded-2xl flex items-center justify-center text-indigo-600 active:scale-90 transition-all"><Trophy size={20} /></button>
+            <button className="w-12 h-12 bg-white shadow-xl shadow-slate-200/50 border border-slate-100 rounded-2xl flex items-center justify-center text-indigo-600 active:scale-90 transition-all"><Trophy size={20} /></button>
             <button onClick={handleLogout} className="w-12 h-12 bg-white shadow-xl shadow-slate-200/50 border border-slate-100 rounded-2xl flex items-center justify-center text-red-500 active:scale-90 transition-all"><LogOut size={20} /></button>
          </div>
       </header>
