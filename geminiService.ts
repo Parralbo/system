@@ -2,7 +2,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 export const getTopicExplanation = async (subject: string, chapter: string, topic: string) => {
-  // Always create instance inside the call to ensure latest API key context (especially if key selection were added)
+  // Always create instance inside the call to ensure latest API key context
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {

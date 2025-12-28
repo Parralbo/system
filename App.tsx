@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { INITIAL_SUBJECTS, LEVELS } from './constants';
-import { ProgressState, PrepType, LevelInfo, UserProfile } from './types';
+import { INITIAL_SUBJECTS, LEVELS } from './constants.ts';
+import { ProgressState, PrepType, LevelInfo, UserProfile } from './types.ts';
 import { 
   Trophy, 
   BookOpen, 
@@ -45,7 +45,7 @@ import {
   ExternalLink,
   Camera
 } from 'lucide-react';
-import { getTopicExplanation } from './geminiService';
+import { getTopicExplanation } from './geminiService.ts';
 
 // --- Utility: Safe Unicode Base64 ---
 const toBase64 = (obj: any) => {
