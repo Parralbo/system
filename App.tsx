@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { INITIAL_SUBJECTS, LEVELS } from './constants.ts';
-import { ProgressState, PrepType, LevelInfo, UserProfile } from './types.ts';
+import { INITIAL_SUBJECTS, LEVELS } from './constants';
+import { ProgressState, PrepType, UserProfile } from './types';
 import { 
   Trophy, 
   BookOpen, 
@@ -18,34 +18,16 @@ import {
   ChevronLeft,
   Loader2,
   X,
-  LogIn,
   UserPlus,
   LogOut,
-  Medal,
   Users,
-  Lock,
-  Eye,
-  EyeOff,
   Sparkles,
-  Info,
-  HelpCircle,
-  TrendingUp,
-  CloudSync,
-  Copy,
-  Download,
-  UploadCloud,
-  RefreshCcw,
-  ShieldCheck,
   Globe,
-  UserCheck,
-  Search,
   Share2,
   QrCode,
-  Link2,
-  ExternalLink,
-  Camera
+  Link2
 } from 'lucide-react';
-import { getTopicExplanation } from './geminiService.ts';
+import { getTopicExplanation } from './geminiService';
 
 // --- Utility: Safe Unicode Base64 ---
 const toBase64 = (obj: any) => {
@@ -716,14 +698,6 @@ const App: React.FC = () => {
               );
             })}
          </div>
-
-         {list.length > 1 && (
-           <div className="p-8 bg-slate-50/50 rounded-[2.5rem] border border-slate-100 text-center border-dashed">
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] leading-relaxed">
-                PEER TELEMETRY IS OFFLINE. GENERATE A NEW <span className="text-indigo-600 border-b-2 border-indigo-200">INVITE LINK</span> TO SHARE YOUR LATEST SCORE.
-              </p>
-           </div>
-         )}
       </div>
     );
   };
