@@ -22,13 +22,11 @@ const getEnvVar = (name: string): string => {
 const supabaseUrl = getEnvVar('VITE_SUPABASE_URL');
 const supabaseKey = getEnvVar('VITE_SUPABASE_ANON_KEY');
 
-// Only initialize if keys are present to avoid console errors
 export const supabase = (supabaseUrl && supabaseKey) 
   ? createClient(supabaseUrl, supabaseKey) 
   : null;
 
 export const cloudSync = {
-  // Explicitly return boolean to resolve "void" expression error in truthiness tests
   isAvailable(): boolean {
     return !!supabase;
   },
@@ -37,52 +35,50 @@ export const cloudSync = {
     if (!supabase) {
       return { 
         ok: false, 
-        message: "Configuration Missing: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is not set in environment variables." 
+        message: "Config Missing: Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel." 
       };
     }
     try {
       const { error } = await supabase.from('profiles').select('username').limit(1);
       if (error) {
         if (error.code === '42P01') {
-          return { ok: false, message: "Database Error: Table 'profiles' does not exist. Please run the SQL setup script." };
+          return { ok: false, message: "Relation Missing: Run the SQL script in Supabase Editor." };
         }
-        return { ok: false, message: `Supabase Error: ${error.message}` };
+        return { ok: false, message: `DB Error: ${error.message}` };
       }
-      return { ok: true, message: "Cloud Sync Connected" };
+      return { ok: true, message: "Cloud Ready" };
     } catch (e) {
-      return { ok: false, message: "Network error: Could not reach Supabase." };
+      return { ok: false, message: "Network error: Connection refused." };
     }
   },
 
   async getUser(username: string): Promise<UserProfile | null> {
     if (!supabase) return null;
     try {
-      const cleanUsername = username.toLowerCase().trim();
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('username', cleanUsername)
+        .eq('username', username.toLowerCase().trim())
         .maybeSingle();
       
-      if (error) return null;
-      if (data) {
-        return {
-          username: data.username,
-          password: data.password,
-          xp: data.xp,
-          progress: data.progress,
-          last_active: data.last_active,
-          followedUsers: data.followed_users
-        } as UserProfile;
-      }
-      return null;
+      if (error || !data) return null;
+
+      // Manually map DB snake_case to Frontend camelCase
+      return {
+        username: data.username,
+        password: data.password,
+        xp: data.xp || 0,
+        progress: data.progress || { completedTopics: {}, chapterCheckboxes: {} },
+        lastActive: data.last_active || Date.now(),
+        followedUsers: data.followed_users || []
+      } as UserProfile;
     } catch (e) {
       return null;
     }
   },
 
   async saveUser(user: UserProfile): Promise<{success: boolean, error?: string}> {
-    if (!supabase) return { success: false, error: "Cloud sync not configured" };
+    if (!supabase) return { success: false, error: "Sync unavailable" };
     try {
       const { error } = await supabase
         .from('profiles')
@@ -92,7 +88,6 @@ export const cloudSync = {
           xp: user.xp,
           progress: user.progress,
           last_active: user.lastActive || Date.now(),
-          // Fix: Mapping UserProfile camelCase to DB snake_case correctly using followedUsers property
           followed_users: user.followedUsers || []
         }, { onConflict: 'username' });
 
