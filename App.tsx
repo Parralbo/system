@@ -22,7 +22,8 @@ import {
   Wifi,
   WifiOff,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Medal
 } from 'lucide-react';
 import { getTopicExplanation } from './geminiService';
 import { cloudSync } from './databaseService';
@@ -101,6 +102,9 @@ const App: React.FC = () => {
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  
+  const [leaderboard, setLeaderboard] = useState<UserProfile[]>([]);
+  const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
 
   const [akiModal, setAkiModal] = useState({ open: false, title: '', content: '', loading: false });
 
@@ -142,6 +146,13 @@ const App: React.FC = () => {
     return health;
   };
 
+  const fetchLeaderboard = useCallback(async () => {
+    setIsLoadingLeaderboard(true);
+    const data = await cloudSync.getLeaderboard(20);
+    setLeaderboard(data);
+    setIsLoadingLeaderboard(false);
+  }, []);
+
   useEffect(() => {
     const restoreSession = async () => {
       const health = await checkCloudHealth();
@@ -161,6 +172,12 @@ const App: React.FC = () => {
     };
     restoreSession();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'leaderboard') {
+      fetchLeaderboard();
+    }
+  }, [activeTab, fetchLeaderboard]);
 
   const syncDebounce = useRef<NodeJS.Timeout | null>(null);
 
@@ -405,11 +422,76 @@ const App: React.FC = () => {
             </div>
           </div>
         ))}
-        {/* Placeholder for future expansion */}
-        {(activeTab === 'leaderboard' || activeTab === 'aki') && (
-           <div className="p-20 text-center space-y-4">
-              <Globe className="mx-auto text-indigo-200" size={80} />
-              <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.3em]">Module under maintenance</p>
+
+        {activeTab === 'leaderboard' && (
+           <div className="p-6 space-y-8 animate-in fade-in duration-500">
+              <div className="text-center space-y-2">
+                 <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tighter">Elite Ranking</h2>
+                 <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest">Global Top Cadets</p>
+              </div>
+
+              {isLoadingLeaderboard ? (
+                <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                   <Loader2 className="text-indigo-600 animate-spin" size={40} />
+                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Querying Cloud...</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                   {leaderboard.length === 0 ? (
+                     <div className="bg-white p-12 rounded-[3rem] text-center border border-slate-100 shadow-xl">
+                        <Globe className="mx-auto text-slate-200 mb-4" size={48} />
+                        <p className="text-slate-400 font-bold">No active cadets found in this sector.</p>
+                     </div>
+                   ) : (
+                     leaderboard.map((cadet, index) => {
+                       const isMe = cadet.username === currentUser.username;
+                       const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : null;
+                       const level = LEVELS.find(l => cadet.xp >= l.min && cadet.xp <= l.max) || LEVELS[0];
+
+                       return (
+                         <div key={cadet.username} className={`bg-white p-6 rounded-[2.5rem] border flex items-center justify-between transition-all ${isMe ? 'border-indigo-400 ring-4 ring-indigo-50 shadow-2xl scale-[1.02]' : 'border-slate-100 shadow-sm'}`}>
+                            <div className="flex items-center gap-6">
+                               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm ${medal ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-400'}`}>
+                                  {medal || index + 1}
+                               </div>
+                               <div>
+                                  <div className="flex items-center gap-2">
+                                     <h4 className={`font-black uppercase tracking-tight ${isMe ? 'text-indigo-600' : 'text-slate-800'}`}>
+                                        {cadet.username} {isMe && '(YOU)'}
+                                     </h4>
+                                     <span className="text-[10px] opacity-70">{level.emoji}</span>
+                                  </div>
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{level.name} • Lvl {level.level}</p>
+                               </div>
+                            </div>
+                            <div className="text-right">
+                               <span className="text-xl font-black text-slate-800 tracking-tighter">{cadet.xp.toLocaleString()}</span>
+                               <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">XP</p>
+                            </div>
+                         </div>
+                       );
+                     })
+                   )}
+                </div>
+              )}
+           </div>
+        )}
+
+        {activeTab === 'aki' && (
+           <div className="p-20 text-center space-y-6 animate-in fade-in">
+              <Sparkles className="mx-auto text-indigo-600 animate-pulse" size={80} />
+              <div className="space-y-2">
+                <h2 className="text-3xl font-black text-slate-800 uppercase tracking-tighter">AKI Protocol</h2>
+                <p className="text-slate-500 text-sm max-w-[250px] mx-auto leading-relaxed">
+                  AKI is currently linked to your subject pathways. Click the sparkle button on any topic to generate a deep-dive explanation.
+                </p>
+              </div>
+              <button 
+                onClick={() => setActiveTab('subjects')}
+                className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-indigo-100"
+              >
+                Go to Pathways
+              </button>
            </div>
         )}
       </main>

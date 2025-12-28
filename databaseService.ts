@@ -63,7 +63,6 @@ export const cloudSync = {
       
       if (error || !data) return null;
 
-      // Manually map DB snake_case to Frontend camelCase
       return {
         username: data.username,
         password: data.password,
@@ -74,6 +73,31 @@ export const cloudSync = {
       } as UserProfile;
     } catch (e) {
       return null;
+    }
+  },
+
+  async getLeaderboard(limit = 20): Promise<UserProfile[]> {
+    if (!supabase) return [];
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('username, xp, last_active')
+        .order('xp', { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        console.error("Leaderboard fetch error:", error);
+        return [];
+      }
+
+      return (data || []).map(d => ({
+        username: d.username,
+        xp: d.xp || 0,
+        lastActive: d.last_active || 0,
+        progress: { completedTopics: {}, chapterCheckboxes: {} }
+      })) as UserProfile[];
+    } catch (e) {
+      return [];
     }
   },
 
