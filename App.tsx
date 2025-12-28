@@ -19,10 +19,11 @@ import {
   Users,
   Sparkles,
   Globe,
-  CloudSync,
   Wifi,
   WifiOff,
-  RefreshCw
+  RefreshCw,
+  AlertCircle,
+  Settings
 } from 'lucide-react';
 import { getTopicExplanation } from './geminiService';
 import { cloudSync } from './databaseService';
@@ -117,19 +118,69 @@ const App: React.FC = () => {
     loading: false
   });
 
+  // Calculate user statistics and rank progress
+  const stats = useMemo(() => {
+    if (!currentUser) return null;
+    const subjectDetails: Record<string, { percent: number }> = {};
+    let totalCompleted = 0;
+    let totalTopicsCount = 0;
+
+    Object.entries(INITIAL_SUBJECTS).forEach(([subName, subject]) => {
+      let subCompleted = 0;
+      let subTotal = 0;
+      Object.entries(subject.chapters).forEach(([chapName, topics]) => {
+        topics.forEach(topic => {
+          subTotal++;
+          if (currentUser.progress.completedTopics[`${subName}-${chapName}-${topic}`]) {
+            subCompleted++;
+          }
+        });
+      });
+      subjectDetails[subName] = {
+        percent: subTotal > 0 ? (subCompleted / subTotal) * 100 : 0
+      };
+      totalCompleted += subCompleted;
+      totalTopicsCount += subTotal;
+    });
+
+    const percent = totalTopicsCount > 0 ? (totalCompleted / totalTopicsCount) * 100 : 0;
+    const currentLevel = LEVELS.find(l => currentUser.xp >= l.min && currentUser.xp <= l.max) || LEVELS[0];
+    const nextLevel = LEVELS.find(l => l.level === currentLevel.level + 1) || currentLevel;
+    
+    let progressToNext = 0;
+    if (nextLevel !== currentLevel) {
+      const range = nextLevel.min - currentLevel.min;
+      const progress = currentUser.xp - currentLevel.min;
+      progressToNext = Math.min(100, (progress / range) * 100);
+    } else {
+      progressToNext = 100;
+    }
+
+    return { xp: currentUser.xp, currentLevel, progressToNext, percent, subjectDetails };
+  }, [currentUser]);
+
+  // Handle AKI topic explanation
+  const handleExplain = async (sub: string, chap: string, topic: string) => {
+    setAkiModal({ open: true, title: topic, content: '', loading: true });
+    try {
+      const response = await getTopicExplanation(sub, chap, topic);
+      setAkiModal(prev => ({ ...prev, content: response, loading: false }));
+    } catch (err) {
+      setAkiModal(prev => ({ ...prev, content: "Error fetching explanation.", loading: false }));
+    }
+  };
+
   const checkCloudHealth = async () => {
-    setCloudStatus({ ok: false, message: "Checking..." });
     const health = await cloudSync.checkConnection();
     setCloudStatus(health);
     return health;
   };
 
-  // --- Session Management ---
   useEffect(() => {
     const restoreSession = async () => {
       const health = await checkCloudHealth();
-
       const savedAlias = localStorage.getItem('hsc-elite-session');
+      
       if (savedAlias) {
         const localData = localStorage.getItem(`hsc-user-${savedAlias}`);
         if (localData) {
@@ -149,35 +200,15 @@ const App: React.FC = () => {
     restoreSession();
   }, []);
 
-  const handleExplain = async (sub: string, chap: string, topic: string) => {
-    setAkiModal({ open: true, title: topic, content: '', loading: true });
-    try {
-      const explanation = await getTopicExplanation(sub, chap, topic);
-      setAkiModal({ open: true, title: topic, content: explanation, loading: false });
-    } catch (error) {
-      setAkiModal({ 
-        open: true, 
-        title: topic, 
-        content: "Satellite connection interrupted. AKI could not process the request.", 
-        loading: false 
-      });
-    }
-  };
-
-  const syncDebounceRef = useRef<NodeJS.Timeout | null>(null);
-
   const performCloudSync = useCallback(async (user: UserProfile) => {
     if (!cloudSync.isAvailable()) return;
     setIsSyncing(true);
-    const result = await cloudSync.saveUser(user);
+    await cloudSync.saveUser(user);
     setIsSyncing(false);
-    
-    if (!result.success) {
-      console.error("Sync Error:", result.error);
-    }
-    
     await checkCloudHealth();
   }, []);
+
+  const syncDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const updateProgress = useCallback((newProgress: ProgressState) => {
     if (!currentUser) return;
@@ -244,7 +275,7 @@ const App: React.FC = () => {
 
         const result = await cloudSync.saveUser(newUser);
         if (!result.success) { 
-          setAuthError(`DB Error: ${result.error || 'Unknown'}`); 
+          setAuthError(`DB Error: ${result.error}`); 
           setIsLoading(false); 
           return; 
         }
@@ -254,7 +285,7 @@ const App: React.FC = () => {
         setCurrentUser(newUser);
       } else {
         let targetUser = await cloudSync.getUser(u);
-        if (!targetUser) { setAuthError('No cadet found in cloud'); setIsLoading(false); return; }
+        if (!targetUser) { setAuthError('Cadet not found'); setIsLoading(false); return; }
         if (targetUser.password !== p) { setAuthError('Access Denied'); setIsLoading(false); return; }
 
         localStorage.setItem(`hsc-user-${u}`, JSON.stringify(targetUser));
@@ -268,48 +299,29 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('hsc-elite-session');
-    setCurrentUser(null);
-    setActiveTab('dashboard');
-  };
-
-  const stats = useMemo(() => {
-    if (!currentUser) return null;
-    let totalTopicsCount = 0;
-    let completedTopicsCount = 0;
-    const subjectDetails: any = {};
-
-    Object.entries(INITIAL_SUBJECTS).forEach(([name, sub]) => {
-      let subTotal = 0;
-      let subDone = 0;
-      Object.entries(sub.chapters || {}).forEach(([chapName, topics]) => {
-        subTotal += topics.length;
-        totalTopicsCount += topics.length;
-        topics.forEach(t => {
-          if (currentUser.progress?.completedTopics?.[`${name}-${chapName}-${t}`]) {
-            subDone++;
-            completedTopicsCount++;
-          }
-        });
-      });
-      subjectDetails[name] = { total: subTotal, done: subDone, percent: subTotal > 0 ? (subDone / subTotal) * 100 : 0 };
-    });
-
-    const currentLevel = LEVELS.find(l => currentUser.xp >= l.min && currentUser.xp <= l.max) || LEVELS[0];
-    const nextLevel = LEVELS[LEVELS.indexOf(currentLevel) + 1] || null;
-    const progressToNext = nextLevel ? ((currentUser.xp - currentLevel.min) / (nextLevel.min - currentLevel.min)) * 100 : 100;
-
-    return { totalTopics: totalTopicsCount, completedTopics: completedTopicsCount, percent: totalTopicsCount > 0 ? (completedTopicsCount / totalTopicsCount) * 100 : 0, xp: currentUser.xp, currentLevel, nextLevel, progressToNext, subjectDetails };
-  }, [currentUser]);
-
   if (isBooting) {
     return (
-      <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center">
-         <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center animate-bounce shadow-2xl shadow-indigo-500/50">
-           <Zap className="text-white fill-white" size={40} />
-         </div>
-         <p className="mt-8 text-indigo-400 font-black text-[10px] uppercase tracking-[0.5em] animate-pulse">Initializing Data Stream...</p>
+      <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center p-8">
+         <Zap className="text-indigo-600 fill-indigo-600 animate-bounce mb-8" size={60} />
+         <p className="text-indigo-400 font-black text-[10px] uppercase tracking-[0.5em] animate-pulse">Initializing Hub...</p>
+      </div>
+    );
+  }
+
+  // Config Shield UI
+  if (!cloudSync.isAvailable()) {
+    return (
+      <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center p-8 text-center">
+        <div className="bg-red-500/10 p-10 rounded-[3rem] border border-red-500/20 max-w-sm space-y-6">
+          <AlertCircle className="text-red-500 mx-auto" size={48} />
+          <h1 className="text-white font-black text-2xl uppercase tracking-tighter">System Offline</h1>
+          <p className="text-slate-400 text-sm leading-relaxed">
+            API Keys are missing. Please add <code className="text-indigo-400">VITE_SUPABASE_URL</code> and <code className="text-indigo-400">VITE_SUPABASE_ANON_KEY</code> to your environment variables or <code className="text-white">.env</code> file.
+          </p>
+          <button onClick={() => window.location.reload()} className="w-full py-4 bg-white text-[#0F172A] rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2">
+            <RefreshCw size={14} /> Refresh System
+          </button>
+        </div>
       </div>
     );
   }
@@ -328,7 +340,7 @@ const App: React.FC = () => {
             </div>
             <div className="space-y-1">
               <h1 className="text-4xl font-black text-white uppercase tracking-tighter">HSC ELITE</h1>
-              <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.4em]">Multi-Platform Study Hub</p>
+              <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.4em]">Cloud Protocol v1.0</p>
             </div>
           </div>
           <div className="bg-white/5 backdrop-blur-xl rounded-[3rem] p-10 shadow-2xl border border-white/10">
@@ -342,21 +354,21 @@ const App: React.FC = () => {
                   <input type="password" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} placeholder="••••••••" className="w-full p-5 rounded-2xl bg-white/5 border-2 border-white/5 focus:border-indigo-500 outline-none font-bold text-sm text-white transition-all" />
                </div>
                {authError && (
-                  <div className="flex flex-col gap-2 p-3 rounded-xl border border-red-500/20 bg-red-500/10">
-                    <p className="text-center text-red-400 text-[9px] font-black uppercase">{authError}</p>
+                  <div className="p-4 rounded-xl border border-red-500/20 bg-red-500/10 space-y-3">
+                    <p className="text-center text-red-400 text-[9px] font-black uppercase leading-tight">{authError}</p>
                     {authError.includes("profiles") && (
-                      <button type="button" onClick={checkCloudHealth} className="flex items-center justify-center gap-1 text-[8px] font-black text-indigo-400 uppercase tracking-widest hover:text-white">
-                        <RefreshCw size={10} className={cloudStatus.message === "Checking..." ? "animate-spin" : ""} /> Retry Cloud Check
-                      </button>
+                      <div className="text-[8px] text-slate-400 text-center uppercase tracking-tight">
+                        Check Supabase SQL Editor to ensure table exists.
+                      </div>
                     )}
                   </div>
                )}
                <button type="submit" disabled={isLoading} className="w-full py-6 bg-indigo-600 text-white font-black rounded-2xl uppercase tracking-widest text-xs shadow-xl active:scale-95 transition-all mt-4 flex items-center justify-center gap-2">
-                 {isLoading ? <Loader2 size={18} className="animate-spin" /> : (isSignup ? 'Register to Cloud' : 'Access Profile')}
+                 {isLoading ? <Loader2 size={18} className="animate-spin" /> : (isSignup ? 'Register New Cadet' : 'Initiate Login')}
                </button>
             </form>
-            <button onClick={() => setIsSignup(!isSignup)} className="w-full mt-8 text-indigo-400 font-black text-[10px] uppercase tracking-widest text-center hover:opacity-70">
-              {isSignup ? 'Returning Cadet? Login' : 'New Cadet? Create Cloud Profile'}
+            <button onClick={() => setIsSignup(!isSignup)} className="w-full mt-8 text-indigo-400 font-black text-[10px] uppercase tracking-widest text-center hover:opacity-70 transition-opacity">
+              {isSignup ? 'Existing Cadet? Access Hub' : 'New Recruit? Register to Cloud'}
             </button>
           </div>
         </div>
@@ -376,14 +388,21 @@ const App: React.FC = () => {
               <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border ${cloudStatus.ok ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
                 {cloudStatus.ok ? <Wifi size={10} className="text-green-500" /> : <WifiOff size={10} className="text-red-500" />}
                 <span className={`text-[8px] font-black uppercase tracking-widest ${cloudStatus.ok ? 'text-green-600' : 'text-red-600'}`}>
-                  {cloudStatus.ok ? 'Cloud Syncing' : 'Offline Mode'}
+                  {cloudStatus.ok ? 'Cloud Synced' : 'Sync Error'}
                 </span>
               </div>
             </div>
          </div>
          <div className="flex gap-2">
-            <button className="w-12 h-12 bg-white shadow-xl shadow-slate-200/50 border border-slate-100 rounded-2xl flex items-center justify-center text-indigo-600 active:scale-90 transition-all"><Trophy size={20} /></button>
-            <button onClick={handleLogout} className="w-12 h-12 bg-white shadow-xl shadow-slate-200/50 border border-slate-100 rounded-2xl flex items-center justify-center text-red-500 active:scale-90 transition-all"><LogOut size={20} /></button>
+            <button 
+              onClick={() => {
+                localStorage.removeItem('hsc-elite-session');
+                window.location.reload();
+              }} 
+              className="w-12 h-12 bg-white shadow-xl shadow-slate-200/50 border border-slate-100 rounded-2xl flex items-center justify-center text-red-500 active:scale-90 transition-all"
+            >
+              <LogOut size={20} />
+            </button>
          </div>
       </header>
 
@@ -400,7 +419,7 @@ const App: React.FC = () => {
                </div>
                <div className="bg-white/10 p-6 rounded-[2rem] space-y-4 backdrop-blur-xl border border-white/10">
                   <div className="flex justify-between text-[11px] font-black uppercase tracking-widest">
-                     <span className="text-white">To {stats?.nextLevel?.name || 'MAX'}</span>
+                     <span className="text-white">To Next Rank</span>
                      <span className="text-indigo-100">{Math.round(stats?.progressToNext || 0)}%</span>
                   </div>
                   <ProgressBar progress={stats?.progressToNext || 0} color="bg-indigo-400" className="h-3" />
@@ -411,23 +430,23 @@ const App: React.FC = () => {
                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-100/50">
                   <div className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mb-4"><Target size={28} /></div>
                   <span className="text-4xl font-black text-slate-800 tracking-tighter">{Math.round(stats?.percent || 0)}%</span>
-                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Mastery</p>
+                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Total Mastery</p>
                </div>
                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-100/50">
-                  <div className="w-12 h-12 bg-green-50 text-green-500 rounded-2xl flex items-center justify-center mb-4"><Users size={28} /></div>
-                  <span className="text-4xl font-black text-slate-800 tracking-tighter">{(currentUser.followedUsers || []).length}</span>
-                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Circle</p>
+                  <div className="w-12 h-12 bg-green-50 text-green-500 rounded-2xl flex items-center justify-center mb-4"><Sparkles size={28} /></div>
+                  <span className="text-4xl font-black text-slate-800 tracking-tighter">{stats?.xp}</span>
+                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Cadet XP</p>
                </div>
             </div>
 
             <div className="space-y-5">
-               <h3 className="font-black text-slate-800 text-[11px] uppercase tracking-[0.3em] px-4">Priority Subjects</h3>
+               <h3 className="font-black text-slate-800 text-[11px] uppercase tracking-[0.3em] px-4">Subject Progress</h3>
                <div className="space-y-4">
-                  {Object.entries(stats?.subjectDetails || {}).slice(0, 3).map(([name, d]: [string, any]) => (
-                     <div key={name} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm transition-all cursor-pointer" onClick={() => { setSelectedSubject(name); setActiveTab('subjects'); }}>
+                  {Object.entries(stats?.subjectDetails || {}).map(([name, d]: [string, any]) => (
+                     <div key={name} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm cursor-pointer active:scale-95 transition-all" onClick={() => { setSelectedSubject(name); setActiveTab('subjects'); }}>
                         <div className="flex justify-between items-center mb-5">
                            <span className="font-black text-base text-slate-700 uppercase tracking-tight">{name}</span>
-                           <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-4 py-1.5 rounded-2xl border border-indigo-100">{Math.round(d.percent)}%</span>
+                           <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-4 py-1.5 rounded-2xl">{Math.round(d.percent)}%</span>
                         </div>
                         <ProgressBar progress={d.percent} color="bg-indigo-600" className="h-2.5" />
                      </div>
@@ -439,8 +458,8 @@ const App: React.FC = () => {
 
         {activeTab === 'subjects' && (selectedSubject ? (
           <div className="animate-in slide-in-from-right-12 duration-500">
-            <div className="p-6 bg-white border-b border-slate-100 sticky top-0 z-40 flex items-center justify-between backdrop-blur-xl bg-white/90">
-              <button onClick={() => setSelectedSubject(null)} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 bg-indigo-50 px-6 py-3 rounded-2xl active:scale-90 transition-all shadow-sm border border-indigo-100"><ChevronLeft size={18} /> Back</button>
+            <div className="p-6 bg-white border-b border-slate-100 sticky top-0 z-40 flex items-center justify-between">
+              <button onClick={() => setSelectedSubject(null)} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 bg-indigo-50 px-6 py-3 rounded-2xl"><ChevronLeft size={18} /> Back</button>
               <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">{selectedSubject}</h3>
               <div className="w-20"></div>
             </div>
@@ -452,7 +471,7 @@ const App: React.FC = () => {
                 const isExpanded = selectedChapter === chapName;
 
                 return (
-                  <div key={chapName} className={`bg-white rounded-[3rem] border transition-all duration-300 ${isExpanded ? 'border-indigo-400 shadow-2xl scale-[1.02]' : 'border-slate-100 shadow-lg shadow-slate-200/50'}`}>
+                  <div key={chapName} className={`bg-white rounded-[3rem] border transition-all duration-300 ${isExpanded ? 'border-indigo-400 shadow-2xl' : 'border-slate-100 shadow-lg'}`}>
                     <div onClick={() => setSelectedChapter(isExpanded ? null : chapName)} className="p-7 flex flex-col cursor-pointer">
                         <div className="flex justify-between items-start mb-6">
                            <h4 className="font-black text-slate-700 text-sm uppercase tracking-tight flex-1 mr-6 leading-tight">{chapName}</h4>
@@ -461,7 +480,7 @@ const App: React.FC = () => {
                         <ProgressBar progress={p} color={p === 100 ? 'bg-green-500' : 'bg-indigo-600'} className="h-3" />
                     </div>
                     {isExpanded && (
-                       <div className="p-8 bg-slate-50/50 border-t border-slate-100 space-y-8 animate-in fade-in duration-500">
+                       <div className="p-8 bg-slate-50 border-t border-slate-100 space-y-8 animate-in fade-in">
                           <div className="grid grid-cols-2 gap-3">
                              {Object.values(PrepType).map(type => (
                                <button key={type} onClick={() => toggleCheck(selectedSubject!, chapName, type)} className={`py-4 px-2 rounded-2xl text-[9px] font-black uppercase tracking-widest border transition-all ${currentUser.progress.chapterCheckboxes[`${selectedSubject}-${chapName}-${type}`] ? 'bg-indigo-600 border-indigo-700 text-white shadow-xl' : 'bg-white border-slate-200 text-slate-400'}`}>
@@ -469,14 +488,14 @@ const App: React.FC = () => {
                                </button>
                              ))}
                           </div>
-                          <div className="space-y-3 pt-6 border-t border-slate-200/50">
+                          <div className="space-y-3 pt-6 border-t border-slate-200">
                              {topics.map(t => (
-                               <div key={t} className="flex items-center justify-between bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
+                               <div key={t} className="flex items-center justify-between bg-white p-5 rounded-[2rem] border border-slate-100">
                                   <button onClick={() => toggleTopic(selectedSubject!, chapName, t)} className="flex items-center gap-4 flex-1 text-left">
                                      {currentUser.progress.completedTopics[`${selectedSubject}-${chapName}-${t}`] ? <CheckCircle2 className="text-green-500" size={24} /> : <Circle className="text-slate-200" size={24} />}
                                      <span className={`text-xs font-bold uppercase tracking-tight ${currentUser.progress.completedTopics[`${selectedSubject}-${chapName}-${t}`] ? 'text-slate-300 line-through' : 'text-slate-600'}`}>{t}</span>
                                   </button>
-                                  <button onClick={() => handleExplain(selectedSubject!, chapName, t)} className="w-12 h-12 flex items-center justify-center text-indigo-600 bg-indigo-50 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all"><Sparkles size={20} /></button>
+                                  <button onClick={() => handleExplain(selectedSubject!, chapName, t)} className="w-12 h-12 flex items-center justify-center text-indigo-600 bg-indigo-50 rounded-2xl"><Sparkles size={20} /></button>
                                </div>
                              ))}
                           </div>
@@ -488,42 +507,29 @@ const App: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="p-6 space-y-6 animate-in fade-in duration-500">
+          <div className="p-6 space-y-6 animate-in fade-in">
             <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tighter px-2">Pathways</h2>
             <div className="grid grid-cols-1 gap-5">
                {Object.keys(INITIAL_SUBJECTS).map(n => (
                  <div key={n} onClick={() => setSelectedSubject(n)} className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-xl flex items-center justify-between group cursor-pointer hover:border-indigo-400 transition-all">
                     <div className="flex items-center gap-6">
-                       <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-[2rem] flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner border border-indigo-100"><BookOpen size={32} /></div>
+                       <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-[2rem] flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all"><BookOpen size={32} /></div>
                        <div className="space-y-1">
                           <h4 className="font-black text-lg text-slate-800 uppercase tracking-tight transition-colors">{n}</h4>
-                          <p className="text-[11px] text-indigo-500 font-black uppercase tracking-widest">{Math.round(stats?.subjectDetails[n].percent)}% Mastery</p>
+                          <p className="text-[11px] text-indigo-500 font-black uppercase tracking-widest">{Math.round(stats?.subjectDetails[n].percent)}% Mastered</p>
                        </div>
                     </div>
-                    <ChevronRight size={32} className="text-slate-300 transition-all" />
+                    <ChevronRight size={32} className="text-slate-300" />
                  </div>
                ))}
             </div>
           </div>
         ))}
-
-        {activeTab === 'leaderboard' && (
-           <div className="p-8 text-center space-y-4 animate-in fade-in duration-500">
-              <div className="w-24 h-24 bg-indigo-100 text-indigo-600 rounded-[2.5rem] mx-auto flex items-center justify-center mb-6">
-                 <Globe size={48} />
-              </div>
-              <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tighter">Global Ranking</h2>
-              <p className="text-slate-500 text-sm font-medium">Connect with other cadets in real-time. Cloud database must be active.</p>
-           </div>
-        )}
-
-        {activeTab === 'aki' && (
-           <div className="p-8 text-center space-y-4 animate-in fade-in duration-500">
-              <div className="w-24 h-24 bg-indigo-100 text-indigo-600 rounded-[2.5rem] mx-auto flex items-center justify-center mb-6">
-                 <Sparkles size={48} />
-              </div>
-              <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tighter">AKI Assistant</h2>
-              <p className="text-slate-500 text-sm font-medium">AKI is available for any specific topic inside your subject pathways.</p>
+        {/* Placeholder for other tabs */}
+        {(activeTab === 'leaderboard' || activeTab === 'aki') && (
+           <div className="p-20 text-center space-y-4">
+              <Globe className="mx-auto text-indigo-200" size={80} />
+              <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.3em]">Module Encrypted</p>
            </div>
         )}
       </main>
