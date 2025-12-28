@@ -28,7 +28,10 @@ import {
   Link2,
   CloudSync,
   ShieldCheck,
-  RefreshCcw
+  RefreshCcw,
+  AlertTriangle,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { getTopicExplanation } from './geminiService';
 import { cloudSync } from './databaseService';
@@ -107,6 +110,7 @@ const App: React.FC = () => {
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
   const [isLevelsModalOpen, setIsLevelsModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState<{ok: boolean, message: string}>({ ok: false, message: "Checking..." });
   
   // Auth state
   const [isSignup, setIsSignup] = useState(false);
@@ -126,6 +130,10 @@ const App: React.FC = () => {
   // --- Session Management ---
   useEffect(() => {
     const restoreSession = async () => {
+      // 1. Check Cloud Health
+      const health = await cloudSync.checkConnection();
+      setCloudStatus(health);
+
       const savedAlias = localStorage.getItem('hsc-elite-session');
       if (savedAlias) {
         // Load local fallback first
@@ -134,8 +142,8 @@ const App: React.FC = () => {
           setCurrentUser(JSON.parse(localData));
         }
 
-        // Immediately try to sync from cloud
-        if (cloudSync.isAvailable()) {
+        // Try to get fresh cloud data
+        if (health.ok) {
           const cloudUser = await cloudSync.getUser(savedAlias);
           if (cloudUser) {
             setCurrentUser(cloudUser);
@@ -143,7 +151,6 @@ const App: React.FC = () => {
           }
         }
       }
-      // Brief delay to ensure splash screen looks intentional
       setTimeout(() => setIsBooting(false), 800);
     };
     restoreSession();
@@ -169,13 +176,12 @@ const App: React.FC = () => {
   const performCloudSync = useCallback(async (user: UserProfile) => {
     if (!cloudSync.isAvailable()) return;
     setIsSyncing(true);
-    try {
-      await cloudSync.saveUser(user);
-    } catch (e) {
-      console.warn("Cloud sync failed, will retry on next change.");
-    } finally {
-      setIsSyncing(false);
-    }
+    const success = await cloudSync.saveUser(user);
+    setIsSyncing(false);
+    
+    // Refresh status after save attempt
+    const health = await cloudSync.checkConnection();
+    setCloudStatus(health);
   }, []);
 
   const updateProgress = useCallback((newProgress: ProgressState) => {
@@ -192,7 +198,7 @@ const App: React.FC = () => {
     if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
     syncDebounceRef.current = setTimeout(() => {
       performCloudSync(updatedUser);
-    }, 1500);
+    }, 1500); 
   }, [currentUser, performCloudSync]);
 
   const toggleTopic = (sub: string, chap: string, topic: string) => {
@@ -221,6 +227,11 @@ const App: React.FC = () => {
     if (!u || !p) { setAuthError('Credentials Missing'); setIsLoading(false); return; }
 
     try {
+      // Re-verify connection
+      const health = await cloudSync.checkConnection();
+      setCloudStatus(health);
+      if (!health.ok) { setAuthError(`Cloud Error: ${health.message}`); setIsLoading(false); return; }
+
       if (isSignup) {
         const cloudUser = await cloudSync.getUser(u);
         if (cloudUser) { setAuthError('Alias already taken'); setIsLoading(false); return; }
@@ -234,18 +245,15 @@ const App: React.FC = () => {
           followedUsers: [] 
         };
 
-        await cloudSync.saveUser(newUser);
+        const success = await cloudSync.saveUser(newUser);
+        if (!success) { setAuthError('Database Save Failed'); setIsLoading(false); return; }
+
         localStorage.setItem(`hsc-user-${u}`, JSON.stringify(newUser));
         localStorage.setItem('hsc-elite-session', u);
         setCurrentUser(newUser);
       } else {
         let targetUser = await cloudSync.getUser(u);
-        if (!targetUser) {
-          const localData = localStorage.getItem(`hsc-user-${u}`);
-          if (localData) targetUser = JSON.parse(localData);
-        }
-
-        if (!targetUser) { setAuthError('No cadet found'); setIsLoading(false); return; }
+        if (!targetUser) { setAuthError('No cadet found in cloud'); setIsLoading(false); return; }
         if (targetUser.password !== p) { setAuthError('Access Denied'); setIsLoading(false); return; }
 
         localStorage.setItem(`hsc-user-${u}`, JSON.stringify(targetUser));
@@ -294,19 +302,17 @@ const App: React.FC = () => {
     return { totalTopics: totalTopicsCount, completedTopics: completedTopicsCount, percent: totalTopicsCount > 0 ? (completedTopicsCount / totalTopicsCount) * 100 : 0, xp: currentUser.xp, currentLevel, nextLevel, progressToNext, subjectDetails };
   }, [currentUser]);
 
-  // Booting Splash Screen
   if (isBooting) {
     return (
       <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center">
          <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center animate-bounce shadow-2xl shadow-indigo-500/50">
            <Zap className="text-white fill-white" size={40} />
          </div>
-         <p className="mt-8 text-indigo-400 font-black text-[10px] uppercase tracking-[0.5em] animate-pulse">Syncing Protocols...</p>
+         <p className="mt-8 text-indigo-400 font-black text-[10px] uppercase tracking-[0.5em] animate-pulse">Initializing Data Stream...</p>
       </div>
     );
   }
 
-  // Auth Screen
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center p-8 relative overflow-hidden">
@@ -321,7 +327,7 @@ const App: React.FC = () => {
             </div>
             <div className="space-y-1">
               <h1 className="text-4xl font-black text-white uppercase tracking-tighter">HSC ELITE</h1>
-              <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.4em]">Multi-Device Access</p>
+              <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.4em]">Supabase Linked</p>
             </div>
           </div>
           <div className="bg-white/5 backdrop-blur-xl rounded-[3rem] p-10 shadow-2xl border border-white/10">
@@ -334,13 +340,13 @@ const App: React.FC = () => {
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Security Key</label>
                   <input type="password" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} placeholder="••••••••" className="w-full p-5 rounded-2xl bg-white/5 border-2 border-white/5 focus:border-indigo-500 outline-none font-bold text-sm text-white transition-all" />
                </div>
-               {authError && <p className="text-center text-red-400 text-[10px] font-black uppercase bg-red-500/10 py-3 rounded-xl">{authError}</p>}
+               {authError && <div className="text-center text-red-400 text-[9px] font-black uppercase bg-red-500/10 py-3 px-2 rounded-xl border border-red-500/20">{authError}</div>}
                <button type="submit" disabled={isLoading} className="w-full py-6 bg-indigo-600 text-white font-black rounded-2xl uppercase tracking-widest text-xs shadow-xl active:scale-95 transition-all mt-4 flex items-center justify-center gap-2">
-                 {isLoading ? <Loader2 size={18} className="animate-spin" /> : (isSignup ? 'Create Account' : 'Authenticate')}
+                 {isLoading ? <Loader2 size={18} className="animate-spin" /> : (isSignup ? 'Register to Cloud' : 'Access Profile')}
                </button>
             </form>
             <button onClick={() => setIsSignup(!isSignup)} className="w-full mt-8 text-indigo-400 font-black text-[10px] uppercase tracking-widest text-center hover:opacity-70">
-              {isSignup ? 'Existing Cadet? Login' : 'New Cadet? Register'}
+              {isSignup ? 'Returning Cadet? Login' : 'New Cadet? Create Cloud Profile'}
             </button>
           </div>
         </div>
@@ -357,13 +363,12 @@ const App: React.FC = () => {
               <Zap className={`text-indigo-600 fill-indigo-600 ${isSyncing ? 'animate-pulse' : ''}`} size={22} />
             </div>
             <div className="flex items-center gap-2 mt-1">
-              <p className="text-indigo-400 text-[11px] font-black uppercase tracking-[0.4em]">Active</p>
-              {cloudSync.isAvailable() && (
-                <div className="flex items-center gap-1 bg-green-50 px-2 py-0.5 rounded-full border border-green-100">
-                   <CloudSync size={10} className="text-green-500" />
-                   <span className="text-[7px] font-black text-green-600 uppercase">Synced</span>
-                </div>
-              )}
+              <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border ${cloudStatus.ok ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+                {cloudStatus.ok ? <Wifi size={10} className="text-green-500" /> : <WifiOff size={10} className="text-red-500" />}
+                <span className={`text-[8px] font-black uppercase tracking-widest ${cloudStatus.ok ? 'text-green-600' : 'text-red-600'}`}>
+                  {cloudStatus.ok ? 'Cloud Active' : cloudStatus.message}
+                </span>
+              </div>
             </div>
          </div>
          <div className="flex gap-2">
@@ -498,7 +503,7 @@ const App: React.FC = () => {
                  <Globe size={48} />
               </div>
               <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tighter">Global Ranking</h2>
-              <p className="text-slate-500 text-sm font-medium">Coming soon: Compete with other HSC cadets across the nation.</p>
+              <p className="text-slate-500 text-sm font-medium">Connect with other cadets in real-time. Cloud database must be active.</p>
            </div>
         )}
 
