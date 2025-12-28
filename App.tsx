@@ -130,19 +130,16 @@ const App: React.FC = () => {
   // --- Session Management ---
   useEffect(() => {
     const restoreSession = async () => {
-      // 1. Check Cloud Health
       const health = await cloudSync.checkConnection();
       setCloudStatus(health);
 
       const savedAlias = localStorage.getItem('hsc-elite-session');
       if (savedAlias) {
-        // Load local fallback first
         const localData = localStorage.getItem(`hsc-user-${savedAlias}`);
         if (localData) {
           setCurrentUser(JSON.parse(localData));
         }
 
-        // Try to get fresh cloud data
         if (health.ok) {
           const cloudUser = await cloudSync.getUser(savedAlias);
           if (cloudUser) {
@@ -176,10 +173,13 @@ const App: React.FC = () => {
   const performCloudSync = useCallback(async (user: UserProfile) => {
     if (!cloudSync.isAvailable()) return;
     setIsSyncing(true);
-    const success = await cloudSync.saveUser(user);
+    const result = await cloudSync.saveUser(user);
     setIsSyncing(false);
     
-    // Refresh status after save attempt
+    if (!result.success) {
+      console.error("Sync Error:", result.error);
+    }
+    
     const health = await cloudSync.checkConnection();
     setCloudStatus(health);
   }, []);
@@ -227,7 +227,6 @@ const App: React.FC = () => {
     if (!u || !p) { setAuthError('Credentials Missing'); setIsLoading(false); return; }
 
     try {
-      // Re-verify connection
       const health = await cloudSync.checkConnection();
       setCloudStatus(health);
       if (!health.ok) { setAuthError(`Cloud Error: ${health.message}`); setIsLoading(false); return; }
@@ -245,8 +244,12 @@ const App: React.FC = () => {
           followedUsers: [] 
         };
 
-        const success = await cloudSync.saveUser(newUser);
-        if (!success) { setAuthError('Database Save Failed'); setIsLoading(false); return; }
+        const result = await cloudSync.saveUser(newUser);
+        if (!result.success) { 
+          setAuthError(`DB Error: ${result.error || 'Unknown'}`); 
+          setIsLoading(false); 
+          return; 
+        }
 
         localStorage.setItem(`hsc-user-${u}`, JSON.stringify(newUser));
         localStorage.setItem('hsc-elite-session', u);
@@ -260,8 +263,8 @@ const App: React.FC = () => {
         localStorage.setItem('hsc-elite-session', u);
         setCurrentUser(targetUser);
       }
-    } catch (err) {
-      setAuthError('Connection Failed');
+    } catch (err: any) {
+      setAuthError(`Connection Failed: ${err.message}`);
     } finally {
       setIsLoading(false);
     }

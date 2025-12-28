@@ -6,7 +6,8 @@ export default defineConfig({
   plugins: [react()],
   define: {
     'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ''),
-    'process.env': {}
+    // Avoid defining process.env as {} as it wipes out other variables
+    // In production builds, Vite usually replaces process.env.VAR automatically
   },
   server: {
     port: 3000,
